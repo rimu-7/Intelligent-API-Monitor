@@ -100,17 +100,19 @@ describe('push client', () => {
   it('retries with the same Idempotency-Key and wraps the batch with a simulator source', async () => {
     const seen: { key: string | null; body: unknown }[] = [];
     let calls = 0;
-    const fetchFn = (async (_url: string, init: RequestInit) => {
+    const fetchFn = ((_url: string, init: RequestInit) => {
       calls += 1;
       seen.push({
         key: new Headers(init.headers).get('idempotency-key'),
-        body: JSON.parse(String(init.body)),
+        body: JSON.parse(init.body as string),
       });
-      if (calls < 3) return new Response('{}', { status: 503 });
-      return Response.json({
-        success: true,
-        data: { run_id: 'r1', received: 1, anomalous: 1, alerts_created: 1, alerts_updated: 0 },
-      });
+      if (calls < 3) return Promise.resolve(new Response('{}', { status: 503 }));
+      return Promise.resolve(
+        Response.json({
+          success: true,
+          data: { run_id: 'r1', received: 1, anomalous: 1, alerts_created: 1, alerts_updated: 0 },
+        }),
+      );
     }) as typeof fetch;
     const client = new MonitorApiClient('http://api', 'ingest', logger, fetchFn, [1, 1, 1]);
     const result = await client.push(
