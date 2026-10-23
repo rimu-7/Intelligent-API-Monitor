@@ -1,0 +1,273 @@
+### API Monitor — ready-to-run requests
+### VS Code "REST Client" (humao.rest-client): click "Send Request" above each block, top to bottom.
+### Named requests (`# @name`) feed later ones, e.g. {{login.response.body.$.data.access_token}}.
+### Values match .env.example (local only). Start the stack first: docker compose up --build
+
+@baseUrl = http://localhost:3001
+@ingestKey = dev-only-ingest-key-0123456789abcdef0123456789abcdef
+@adminEmail = admin@example.com
+@adminPassword = dev-only-Admin-2026
+@origin = http://localhost:3000
+
+############################################################################
+# 1. Health and meta
+############################################################################
+
+### Liveness
+GET {{baseUrl}}/health/live
+
+### Readiness (database + Redis)
+GET {{baseUrl}}/health/ready
+
+### Full health report (AI circuit states, simulator)
+GET {{baseUrl}}/health
+
+### Public runtime info
+GET {{baseUrl}}/api/v1/meta
+
+### OpenAPI document (Swagger UI lives at /docs)
+GET {{baseUrl}}/docs/openapi.json
+
+############################################################################
+# 2. Ingest the assignment PDF example
+############################################################################
+
+### POST /monitor with the ingest key (also works anonymously when DEMO_MODE=true)
+# @name ingestPdf
+POST {{baseUrl}}/monitor
+Content-Type: application/json
+x-ingest-key: {{ingestKey}}
+
+[
+  { "api_name": "PatientDataAPI", "response_time_ms": 1200, "status_code": 200, "records_returned": 50 },
+  { "api_name": "AppointmentAPI", "response_time_ms": 5500, "status_code": 500, "records_returned": 0 }
+]
+
+### Same payload again → still one alert, occurrence_count 2
+POST {{baseUrl}}/api/v1/monitor
+Content-Type: application/json
+x-ingest-key: {{ingestKey}}
+
+[
+  { "api_name": "PatientDataAPI", "response_time_ms": 1200, "status_code": 200, "records_returned": 50 },
+  { "api_name": "AppointmentAPI", "response_time_ms": 5500, "status_code": 500, "records_returned": 0 }
+]
+
+### Wrapped batch with a source label and an Idempotency-Key (send twice → replayed)
+POST {{baseUrl}}/api/v1/monitor
+Content-Type: application/json
+x-ingest-key: {{ingestKey}}
+Idempotency-Key: 6f9619ff-8b86-4011-b42d-00c04fc964ff
+
+{
+  "logs": [
+    { "api_name": "LabResultsAPI", "response_time_ms": 2600, "status_code": 200, "records_returned": 18 },
+    { "api_name": "EHRIntegrationAPI", "response_time_ms": 480, "status_code": 200 }
+  ],
+  "source": "webhook"
+}
+
+############################################################################
+# 3. Log in (sets the httpOnly refresh cookie; keep the access token in memory)
+############################################################################
+
+### Login
+# @name login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "email": "{{adminEmail}}", "password": "{{adminPassword}}" }
+
+###
+@token = {{login.response.body.$.data.access_token}}
+
+### Current user and permissions
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{token}}
+
+### Rotate the refresh cookie (needs the cookie from login + an allowed Origin)
+POST {{baseUrl}}/api/v1/auth/refresh
+Origin: {{origin}}
+
+############################################################################
+# 4. Alerts
+############################################################################
+
+### Active alerts (assignment path)
+# @name listAlerts
+GET {{baseUrl}}/alerts
+Authorization: Bearer {{token}}
+
+###
+@alertId = {{listAlerts.response.body.$.data[0].id}}
+
+### Filtered, paginated
+GET {{baseUrl}}/api/v1/alerts?status=ALL&severity=CRITICAL&sort=severity&limit=10&offset=0
+Authorization: Bearer {{token}}
+
+### Summary (dashboard)
+GET {{baseUrl}}/api/v1/alerts/summary
+Authorization: Bearer {{token}}
+
+### Detail with the last 20 samples
+GET {{baseUrl}}/api/v1/alerts/{{alertId}}
+Authorization: Bearer {{token}}
+
+### Realtime: get a single-use stream ticket (60 s)
+# @name ticket
+POST {{baseUrl}}/api/v1/alerts/stream-ticket
+Authorization: Bearer {{token}}
+
+### Open the SSE stream (REST Client shows the first chunk; use `curl -N` to watch it live)
+GET {{baseUrl}}/api/v1/alerts/stream?ticket={{ticket.response.body.$.data.ticket}}
+
+### Re-run AI text generation (202)
+POST {{baseUrl}}/api/v1/alerts/{{alertId}}/regenerate
+Authorization: Bearer {{token}}
+
+### Resolve
+PATCH {{baseUrl}}/api/v1/alerts/{{alertId}}/resolve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "note": "Restarted the scheduler pods" }
+
+### Resolved alerts
+GET {{baseUrl}}/alerts?status=RESOLVED
+Authorization: Bearer {{token}}
+
+############################################################################
+# 5. Ingestion helpers
+############################################################################
+
+### Allowlisted sample files
+GET {{baseUrl}}/api/v1/monitor/static/files
+Authorization: Bearer {{token}}
+
+### Ingest a sample file (logged-in user required)
+POST {{baseUrl}}/api/v1/monitor/static
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "file": "edge-cases.json" }
+
+### Pull 10 live items from the simulator and ingest them
+POST {{baseUrl}}/api/v1/monitor/fetch-live
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "count": 10 }
+
+### Recent ingestion runs
+GET {{baseUrl}}/api/v1/monitor/runs?limit=10
+Authorization: Bearer {{token}}
+
+############################################################################
+# 6. Simulator (proxied, RBAC applies)
+############################################################################
+
+### Scenarios
+GET {{baseUrl}}/api/v1/simulator/scenarios
+Authorization: Bearer {{token}}
+
+### Outage burst → one alert, occurrence_count 25, one email
+POST {{baseUrl}}/api/v1/simulator/scenarios/outage-burst
+Authorization: Bearer {{token}}
+
+### Escalation → WARNING then CRITICAL, escalation email
+POST {{baseUrl}}/api/v1/simulator/scenarios/escalation
+Authorization: Bearer {{token}}
+
+### Start a stream (auto-stops after STREAM_MAX_DURATION_MS)
+POST {{baseUrl}}/api/v1/simulator/stream/start
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "interval_ms": 2000, "batch_size": 10 }
+
+### Stream status
+GET {{baseUrl}}/api/v1/simulator/stream/status
+Authorization: Bearer {{token}}
+
+### Stop the stream
+POST {{baseUrl}}/api/v1/simulator/stream/stop
+Authorization: Bearer {{token}}
+
+############################################################################
+# 7. Monitored APIs and thresholds
+############################################################################
+
+### Monitored APIs with last-hour stats
+GET {{baseUrl}}/api/v1/apis
+Authorization: Bearer {{token}}
+
+### Per-API thresholds (both null = back to defaults)
+PATCH {{baseUrl}}/api/v1/apis/LabResultsAPI/thresholds
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "latency_warning_ms": 3000, "latency_critical_ms": 8000 }
+
+############################################################################
+# 8. Users (admins only; there is no public registration)
+############################################################################
+
+### List users
+GET {{baseUrl}}/api/v1/users
+Authorization: Bearer {{token}}
+
+### Create a manager (reserved role: can log in and call /auth/me only)
+# @name createManager
+POST {{baseUrl}}/api/v1/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "email": "manager-{{$timestamp}}@example.com", "password": "a-long-manager-password", "role": "MANAGER" }
+
+### Log in as the manager
+# @name managerLogin
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "email": "{{createManager.response.body.$.data.email}}", "password": "a-long-manager-password" }
+
+###
+@managerToken = {{managerLogin.response.body.$.data.access_token}}
+
+### The manager can read /auth/me (permissions: [])…
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{managerToken}}
+
+### …and change their own password (returns a fresh session; other sessions end)
+POST {{baseUrl}}/api/v1/auth/change-password
+Authorization: Bearer {{managerToken}}
+Content-Type: application/json
+
+{ "current_password": "a-long-manager-password", "new_password": "a-brand-new-password-2026" }
+
+### Deactivate that manager (ends their sessions immediately)
+PATCH {{baseUrl}}/api/v1/users/{{createManager.response.body.$.data.id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "is_active": false }
+
+############################################################################
+# 9. Audit trail
+############################################################################
+
+### Latest security events
+GET {{baseUrl}}/api/v1/audit-logs?limit=20
+Authorization: Bearer {{token}}
+
+### Only failed logins
+GET {{baseUrl}}/api/v1/audit-logs?action=auth.login.failure
+Authorization: Bearer {{token}}
+
+############################################################################
+# 10. Session end
+############################################################################
+
+### Logout (revokes the refresh token, clears the cookie)
+POST {{baseUrl}}/api/v1/auth/logout
+Origin: {{origin}}

@@ -58,7 +58,12 @@ export const registerDocsRoutes = (
 ): void => {
   const uiOptions = {
     customSiteTitle: 'API Monitor — API docs',
-    swaggerOptions: { persistAuthorization: true, displayRequestDuration: true, tryItOutEnabled: true },
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      tryItOutEnabled: true,
+      deepLinking: true,
+    },
   };
 
   // Swagger UI static assets + init script (public, read-only). Directory index is disabled.

@@ -1449,12 +1449,12 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** every scenario runs end to end through the API proxy; `outage-burst` yields one alert with `occurrence_count 25` and one email; the stream auto-stops at `STREAM_MAX_DURATION_MS`.
 
 ### Phase 9 — API contract and developer experience (replaces the UI phase)
-- [ ] `docs/openapi.yaml` (OpenAPI 3.1): every route, request/response schemas, the error envelope and codes, examples (PDF request and response), security schemes `bearerAuth` and `ingestKey`.
-- [ ] `/docs` (Swagger UI with a route-specific CSP) and `/docs/openapi.json`.
-- [ ] CORS exactly per §15.1.
-- [ ] `docs/api.http`: every route in demo order (health → ingest PDF example → list alerts → login → stream ticket → resolve → scenarios → thresholds → users → audit), using variables for base URL, token and ingest key.
-- [ ] `docs/FRONTEND_INTEGRATION.md` per §15, with copy-paste examples: Next.js `rewrites`, a fetch wrapper with single-flight refresh, and an SSE hook with ticket reconnect. Documentation only — no Next.js app.
-- [ ] Contract tests (§15.6).
+- [x] `docs/openapi.yaml` (OpenAPI 3.1): every route, request/response schemas, the error envelope and codes, examples (PDF request and response), security schemes `bearerAuth` and `ingestKey`.
+- [x] `/docs` (Swagger UI with a route-specific CSP) and `/docs/openapi.json`.
+- [x] CORS exactly per §15.1.
+- [x] `docs/api.http`: every route in demo order (health → ingest PDF example → list alerts → login → stream ticket → resolve → scenarios → thresholds → users → audit), using variables for base URL, token and ingest key.
+- [x] `docs/FRONTEND_INTEGRATION.md` per §15, with copy-paste examples: Next.js `rewrites`, a fetch wrapper with single-flight refresh, and an SSE hook with ticket reconnect. Documentation only — no Next.js app.
+- [x] Contract tests (§15.6).
 - **Gate:** `npm run test:contract` passes; Swagger UI at `http://localhost:3001/docs` can authorize as admin and run the PDF example; every request in `docs/api.http` succeeds against the compose stack.
 
 ### Phase 10 — Hardening and documentation

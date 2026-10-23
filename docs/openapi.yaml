@@ -2,7 +2,1484 @@ openapi: 3.1.0
 info:
   title: Intelligent API Monitor
   version: 1.0.0
-  description: Work in progress — completed in Phase 9.
+  summary: Ingest API telemetry, detect anomalies deterministically, get AI-written alerts.
+  description: |
+    Backend contract for the API Monitor (and the future Next.js client).
+
+    **Conventions**
+    - JSON is `snake_case`. Timestamps are ISO-8601 UTC strings; ids are UUIDs.
+    - Success: `{ "success": true, "data": …, "meta"?: … }`. Error: `{ "success": false, "error": { "code", "message", "details"?, "request_id" } }`.
+    - List endpoints return `meta: { total, limit, offset }`. Error `code` values are stable (see `ErrorCode`).
+    - Every response carries `X-Request-Id`; send your own (8–64 chars `[A-Za-z0-9-]`) to correlate logs.
+
+    **Authentication**
+    - Users: `POST /api/v1/auth/login` → `access_token` (Bearer, 15 min) + an httpOnly refresh cookie `apimon_rt`.
+      Use **Authorize → bearerAuth** in this page with the token.
+    - Machines: header `x-ingest-key` (ingestion only). Use **Authorize → ingestKey**.
+    - Demo mode (`DEMO_MODE=true`, never in production): anonymous callers may ingest and read alerts/APIs.
+
+    **Try it:** authorize with the ingest key (or nothing in demo mode) and run `POST /monitor` with the PDF example.
 servers:
   - url: http://localhost:3001
-paths: {}
+    description: Local (docker compose / npm run dev)
+tags:
+  - name: Health
+  - name: Meta
+  - name: Ingestion
+  - name: Alerts
+  - name: Realtime
+  - name: APIs
+  - name: Simulator
+  - name: Auth
+  - name: Users
+  - name: Audit
+  - name: Docs
+security:
+  - bearerAuth: []
+
+# Shared fragments (YAML anchors — resolved when the document is parsed).
+x-shared:
+  ingest-responses: &ingestResponses
+    '200': { $ref: '#/components/responses/IngestOk' }
+    '400': { $ref: '#/components/responses/BadRequest' }
+    '401': { $ref: '#/components/responses/Unauthorized' }
+    '403': { $ref: '#/components/responses/Forbidden' }
+    '409': { $ref: '#/components/responses/Conflict' }
+    '413': { $ref: '#/components/responses/PayloadTooLarge' }
+    '422': { $ref: '#/components/responses/Unprocessable' }
+    '429': { $ref: '#/components/responses/RateLimited' }
+  alert-list-parameters: &alertListParameters
+    - { name: status, in: query, schema: { type: string, enum: [ACTIVE, RESOLVED, ALL], default: ACTIVE } }
+    - { name: severity, in: query, schema: { $ref: '#/components/schemas/Severity' } }
+    - { name: api_name, in: query, schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$' } }
+    - { name: anomaly_type, in: query, schema: { $ref: '#/components/schemas/AnomalyCode' } }
+    - { name: sort, in: query, schema: { type: string, enum: [last_seen_at, severity], default: last_seen_at } }
+    - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+  alert-list-responses: &alertListResponses
+    '200':
+      description: Alerts, newest activity first (or by severity)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AlertListResponse' }
+    '400': { $ref: '#/components/responses/BadRequest' }
+    '401': { $ref: '#/components/responses/Unauthorized' }
+    '403': { $ref: '#/components/responses/Forbidden' }
+  pdf-alert: &pdfAlert
+    id: 4f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f
+    api_name: AppointmentAPI
+    status: ACTIVE
+    severity: CRITICAL
+    previous_severity: null
+    anomaly_types: [SERVER_ERROR, HIGH_LATENCY, ZERO_RECORDS]
+    alert_message: AppointmentAPI failed with status 500 and returned 0 records (response time 5500 ms). Possible outage or data issue.
+    probable_cause: Unhandled server exception or failing upstream dependency (database, downstream service).
+    recommended_action: Check the service's error logs and recent deployments, then verify its database and dependency health.
+    status_code: 500
+    response_time_ms: 5500
+    records_returned: 0
+    last_status_code: 500
+    last_response_time_ms: 5500
+    last_records_returned: 0
+    peak_response_time_ms: 5500
+    occurrence_count: 1
+    ai_status: FALLBACK
+    ai_provider: template
+    ai_model: null
+    ai_generated_at: '2026-10-23T10:00:01.000Z'
+    first_seen_at: '2026-10-23T10:00:00.000Z'
+    last_seen_at: '2026-10-23T10:00:00.000Z'
+    escalated_at: null
+    resolved_at: null
+    resolution_source: null
+    resolution_note: null
+    created_at: '2026-10-23T10:00:00.000Z'
+    updated_at: '2026-10-23T10:00:01.000Z'
+
+paths:
+  # ─── Health ────────────────────────────────────────────────────────────────
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Process is up
+      operationId: healthLive
+      security: []
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatusResponse' }
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Database and Redis reachable (Docker healthcheck)
+      operationId: healthReady
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatusResponse' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /health:
+    get:
+      tags: [Health]
+      summary: Full health report
+      description: Database, Redis, simulator (informational) and AI provider circuit states. 503 when the database or Redis is down.
+      operationId: healthReport
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+        '503':
+          description: Degraded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+  # ─── Docs ──────────────────────────────────────────────────────────────────
+  /docs:
+    get:
+      tags: [Docs]
+      summary: Swagger UI
+      operationId: docsUi
+      security: []
+      responses:
+        '200':
+          description: HTML page (`/docs` redirects to `/docs/`)
+          content:
+            text/html:
+              schema: { type: string }
+        '301':
+          description: Redirect to `/docs/`
+  /docs/openapi.json:
+    get:
+      tags: [Docs]
+      summary: This document as JSON
+      description: Generate client types with `npx openapi-typescript http://localhost:3001/docs/openapi.json`.
+      operationId: openapiJson
+      security: []
+      responses:
+        '200':
+          description: OpenAPI 3.1 document
+          content:
+            application/json:
+              schema: { type: object }
+
+  # ─── Meta ──────────────────────────────────────────────────────────────────
+  /api/v1/meta:
+    get:
+      tags: [Meta]
+      summary: Public runtime information for clients
+      operationId: getMeta
+      security: []
+      responses:
+        '200':
+          description: Meta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetaResponse' }
+
+  # ─── Ingestion ─────────────────────────────────────────────────────────────
+  /monitor:
+    post:
+      tags: [Ingestion]
+      summary: Ingest telemetry (assignment path)
+      description: Same handler as `POST /api/v1/monitor`.
+      operationId: ingestRoot
+      security: [{ ingestKey: [] }, { bearerAuth: [] }, {}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { $ref: '#/components/requestBodies/TelemetryBatch' }
+      responses: *ingestResponses
+  /api/v1/monitor:
+    post:
+      tags: [Ingestion]
+      summary: Ingest telemetry
+      description: |
+        Accepts the PDF array, `{ "logs": [...], "source": "…" }`, or a single object (max `MAX_BATCH_SIZE` items, body ≤ `MAX_BODY_SIZE`).
+        Items that cannot be attributed to an API are rejected (`rejected_items`); everything else is evaluated.
+        Repeats of an active incident update it (`occurrence_count`), they never create a second alert.
+        Rate limit: 120 requests/min per principal. Supports `Idempotency-Key`.
+      operationId: ingest
+      security: [{ ingestKey: [] }, { bearerAuth: [] }, {}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { $ref: '#/components/requestBodies/TelemetryBatch' }
+      responses: *ingestResponses
+  /api/v1/monitor/static:
+    post:
+      tags: [Ingestion]
+      summary: Ingest an allowlisted sample file
+      description: Requires `telemetry:ingest` and a logged-in user (not the ingest key, not anonymous).
+      operationId: ingestStatic
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaticIngestRequest' }
+            example: { file: pdf-example.json }
+      responses:
+        '200': { $ref: '#/components/responses/IngestOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/v1/monitor/static/files:
+    get:
+      tags: [Ingestion]
+      summary: List allowlisted sample files
+      operationId: listStaticFiles
+      security: [{ bearerAuth: [] }, {}]
+      responses:
+        '200':
+          description: Files
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SampleFileListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/monitor/fetch-live:
+    post:
+      tags: [Ingestion]
+      summary: Pull items from the simulator and ingest them
+      operationId: fetchLive
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FetchLiveRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/IngestOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/SimulatorUnavailable' }
+  /api/v1/monitor/runs:
+    get:
+      tags: [Ingestion]
+      summary: Recent ingestion runs
+      operationId: listRuns
+      security: [{ bearerAuth: [] }, {}]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Runs, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ─── Alerts ────────────────────────────────────────────────────────────────
+  /alerts:
+    get:
+      tags: [Alerts]
+      summary: List alerts (assignment path)
+      description: Same handler as `GET /api/v1/alerts`. Defaults to ACTIVE alerts.
+      operationId: listAlertsRoot
+      security: [{ bearerAuth: [] }, {}]
+      parameters: *alertListParameters
+      responses: *alertListResponses
+  /api/v1/alerts:
+    get:
+      tags: [Alerts]
+      summary: List alerts
+      operationId: listAlerts
+      security: [{ bearerAuth: [] }, {}]
+      parameters: *alertListParameters
+      responses: *alertListResponses
+  /api/v1/alerts/summary:
+    get:
+      tags: [Alerts]
+      summary: Counts by status/severity and the top APIs (cached 5 s)
+      operationId: alertSummary
+      security: [{ bearerAuth: [] }, {}]
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertSummaryResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/alerts/{id}:
+    get:
+      tags: [Alerts]
+      summary: Alert detail with the last 20 linked samples
+      operationId: getAlert
+      security: [{ bearerAuth: [] }, {}]
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      responses:
+        '200':
+          description: Alert
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertDetailResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/alerts/{id}/resolve:
+    patch:
+      tags: [Alerts]
+      summary: Resolve an active alert
+      operationId: resolveAlert
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveRequest' }
+            example: { note: Restarted the scheduler pods }
+      responses:
+        '200':
+          description: Resolved alert
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/alerts/{id}/regenerate:
+    post:
+      tags: [Alerts]
+      summary: Re-run AI text generation (bypasses the AI cache)
+      description: Rate limit 10/min per user. The alert returns to `ai_status = PENDING`; watch the stream or poll for the result.
+      operationId: regenerateAlert
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  # ─── Realtime ──────────────────────────────────────────────────────────────
+  /api/v1/alerts/stream-ticket:
+    post:
+      tags: [Realtime]
+      summary: Get a single-use, 60-second ticket for the SSE stream
+      operationId: createStreamTicket
+      responses:
+        '200':
+          description: Ticket
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StreamTicketResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/alerts/stream:
+    get:
+      tags: [Realtime]
+      summary: Server-sent events stream of alert changes
+      description: |
+        Open with `new EventSource('/api/v1/alerts/stream?ticket=…')`. Tickets are single use: on `error`, close,
+        request a new ticket and reconnect with backoff (1 s → 30 s). Anonymous access only in demo mode.
+
+        Frames: `id: <uuid>\nevent: <name>\ndata: <json>\n\n`. Events: `ready`, `alert.created`, `alert.updated`,
+        `alert.resolved` (`{ alert }`), `alerts.invalidated` (`{ reason, count }` — refetch lists),
+        `monitor.run.completed` (`{ run }`), `shutdown`. A `: ping` comment is sent every 20 s.
+        Limits: 5 streams per user, 500 per API instance (429).
+      operationId: alertStream
+      security: [{}]
+      parameters:
+        - { name: ticket, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  # ─── APIs ──────────────────────────────────────────────────────────────────
+  /api/v1/apis:
+    get:
+      tags: [APIs]
+      summary: Monitored APIs with last-hour stats (cached 10 s)
+      operationId: listApis
+      security: [{ bearerAuth: [] }, {}]
+      responses:
+        '200':
+          description: APIs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/apis/{name}/thresholds:
+    patch:
+      tags: [APIs]
+      summary: Set per-API latency thresholds (both null = use defaults)
+      operationId: updateThresholds
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ThresholdsUpdate' }
+            example: { latency_warning_ms: 3000, latency_critical_ms: 8000 }
+      responses:
+        '200':
+          description: Effective thresholds
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThresholdsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ─── Simulator proxy ───────────────────────────────────────────────────────
+  /api/v1/simulator/scenarios:
+    get:
+      tags: [Simulator]
+      summary: List simulator scenarios
+      operationId: listScenarios
+      responses:
+        '200':
+          description: Scenarios
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenarioListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/SimulatorUnavailable' }
+  /api/v1/simulator/scenarios/{name}:
+    post:
+      tags: [Simulator]
+      summary: Run a scenario (the simulator pushes its batches to /api/v1/monitor)
+      operationId: runScenario
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              [pdf-example, healthy-batch, high-latency, server-error, zero-records, missing-records, invalid-metrics, auth-failure, rate-limited, outage-burst, escalation, mixed-batch]
+      responses:
+        '200':
+          description: Scenario result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenarioRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/SimulatorUnavailable' }
+  /api/v1/simulator/stream/start:
+    post:
+      tags: [Simulator]
+      summary: Start a continuous telemetry stream (auto-stops after STREAM_MAX_DURATION_MS)
+      operationId: startStream
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StreamStartRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/StreamStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/SimulatorUnavailable' }
+  /api/v1/simulator/stream/stop:
+    post:
+      tags: [Simulator]
+      summary: Stop the stream
+      operationId: stopStream
+      responses:
+        '200': { $ref: '#/components/responses/StreamStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/SimulatorUnavailable' }
+  /api/v1/simulator/stream/status:
+    get:
+      tags: [Simulator]
+      summary: Stream status
+      operationId: streamStatus
+      responses:
+        '200': { $ref: '#/components/responses/StreamStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/SimulatorUnavailable' }
+
+  # ─── Auth ──────────────────────────────────────────────────────────────────
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      description: |
+        Returns an access token (keep it in memory, never `localStorage`) and sets the httpOnly refresh cookie
+        `apimon_rt` (Path `/api/v1/auth`). Brute-force protection: 20 attempts / 15 min per IP; 5 consecutive
+        failures block an email for 15 min (429 with `Retry-After`). One generic error for every failure.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: admin@example.com, password: dev-only-Admin-2026 }
+      responses:
+        '200':
+          description: Logged in
+          headers:
+            Set-Cookie:
+              description: '`apimon_rt=…; Path=/api/v1/auth; HttpOnly; SameSite=Strict` (+ `Secure` in production)'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh cookie and get a new access token
+      description: |
+        Requires the `apimon_rt` cookie and an `Origin` header from `CORS_ALLOWED_ORIGINS`. Every call rotates the
+        token. `401 REFRESH_RACE` means another tab refreshed first — retry once after 300 ms. Reusing an old token
+        revokes the whole session family. Rate limit 60/min per IP.
+      operationId: refresh
+      security: []
+      responses:
+        '200':
+          description: New session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the refresh token and clear the cookie
+      description: Requires an `Origin` header from `CORS_ALLOWED_ORIGINS`.
+      operationId: logout
+      security: []
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LogoutResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user and permissions
+      description: Any authenticated user, including the reserved `MANAGER` role.
+      operationId: me
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change your password
+      description: Ends every other session and returns a fresh one (new token + cookie).
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '200':
+          description: New session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ─── Users ─────────────────────────────────────────────────────────────────
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users
+      operationId: listUsers
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/Role' } }
+        - { name: is_active, in: query, schema: { type: string, enum: ['true', 'false'] } }
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserListResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Users]
+      summary: Create a user (no public registration exists)
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserRequest' }
+            example: { email: manager@example.com, password: a-long-password-2026, role: MANAGER }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/users/{id}:
+    patch:
+      tags: [Users]
+      summary: Change a user's role and/or active flag
+      description: You cannot change your own role or deactivate yourself; the last active admin is protected (409 `LAST_ADMIN`). Changes end the user's sessions immediately.
+      operationId: updateUser
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ─── Audit ─────────────────────────────────────────────────────────────────
+  /api/v1/audit-logs:
+    get:
+      tags: [Audit]
+      summary: Security audit trail (newest first)
+      operationId: listAuditLogs
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: action, in: query, schema: { type: string, example: auth.login.failure } }
+        - { name: actor_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogListResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from `POST /api/v1/auth/login` (15 minutes).
+    ingestKey:
+      type: apiKey
+      in: header
+      name: x-ingest-key
+      description: Machine credential for ingestion only. Never send it from a browser.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 'UUID. Same key + same body within 24 h replays the stored response (header `Idempotent-Replayed` = true); same key + different body → 422.'
+      schema: { type: string, format: uuid }
+    AlertId:
+      name: id
+      in: path
+      required: true
+      description: Alert UUID (anything else → 400 `INVALID_ID`).
+      schema: { type: string, format: uuid }
+
+  requestBodies:
+    TelemetryBatch:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TelemetryBatch' }
+          examples:
+            pdf:
+              summary: The assignment PDF example
+              value:
+                - { api_name: PatientDataAPI, response_time_ms: 1200, status_code: 200, records_returned: 50 }
+                - { api_name: AppointmentAPI, response_time_ms: 5500, status_code: 500, records_returned: 0 }
+            wrapped:
+              summary: Wrapped batch with a source label
+              value:
+                logs:
+                  - { api_name: LabResultsAPI, response_time_ms: 2600, status_code: 200, records_returned: 18 }
+                source: webhook
+            single:
+              summary: Single object
+              value: { api_name: BillingServiceAPI, response_time_ms: 640, status_code: 503, records_returned: 12 }
+
+  responses:
+    IngestOk:
+      description: Batch processed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/IngestResponse' }
+          examples:
+            pdf:
+              summary: Response for the PDF example (no LLM configured)
+              value:
+                success: true
+                data:
+                  run_id: 1f0c3c1e-6c7a-4d43-9bd4-6b8a0c1f2a33
+                  source: api
+                  source_detail: null
+                  received: 2
+                  processed: 2
+                  healthy: 1
+                  anomalous: 1
+                  rejected: 0
+                  alerts_created: 1
+                  alerts_updated: 0
+                  results:
+                    - { index: 0, api_name: PatientDataAPI, status: healthy }
+                    - index: 1
+                      api_name: AppointmentAPI
+                      status: anomalous
+                      severity: CRITICAL
+                      anomaly_types: [SERVER_ERROR, HIGH_LATENCY, ZERO_RECORDS]
+                      alert_id: 4f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f
+                  rejected_items: []
+                  alerts:
+                    - *pdfAlert
+    StreamStatus:
+      description: Stream status
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StreamStatusResponse' }
+    BadRequest:
+      description: Invalid input (`INVALID_JSON`, `INVALID_PAYLOAD`, `EMPTY_BATCH`, `VALIDATION_ERROR`, `INVALID_ID`, `UNKNOWN_SAMPLE_FILE`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Not authenticated (`UNAUTHORIZED`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED`, `REFRESH_RACE`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            success: false
+            error: { code: TOKEN_EXPIRED, message: Access token expired, request_id: 6b1f0a0e-7c4c-4c2a-9a45-55c7e4c2b0aa }
+    Forbidden:
+      description: Authenticated but not allowed (`FORBIDDEN`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Not found (`NOT_FOUND`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Conflict (`ALERT_ALREADY_RESOLVED`, `IDEMPOTENCY_IN_PROGRESS`, `LAST_ADMIN`, `CONFLICT`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    PayloadTooLarge:
+      description: Too large (`PAYLOAD_TOO_LARGE`, `BATCH_TOO_LARGE`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unprocessable:
+      description: '`ALL_ITEMS_REJECTED` (details carry `run_id` and `rejected_items`) or `IDEMPOTENCY_KEY_REUSED`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RateLimited:
+      description: Too many requests (`RATE_LIMITED`); see `Retry-After`
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    SimulatorUnavailable:
+      description: The telemetry simulator is unreachable (`SIMULATOR_UNAVAILABLE`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ServiceUnavailable:
+      description: A dependency is down or the server is shutting down (`SERVICE_UNAVAILABLE`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  examples:
+    PdfAlert:
+      summary: AlertDto for the PDF anomaly (template text)
+      value: *pdfAlert
+
+  schemas:
+    # ── enums ──
+    ErrorCode:
+      type: string
+      enum:
+        [INVALID_JSON, INVALID_PAYLOAD, EMPTY_BATCH, VALIDATION_ERROR, INVALID_ID, UNKNOWN_SAMPLE_FILE, UNAUTHORIZED, INVALID_CREDENTIALS, TOKEN_EXPIRED, REFRESH_RACE, FORBIDDEN, NOT_FOUND, ALERT_ALREADY_RESOLVED, IDEMPOTENCY_IN_PROGRESS, LAST_ADMIN, CONFLICT, PAYLOAD_TOO_LARGE, BATCH_TOO_LARGE, ALL_ITEMS_REJECTED, IDEMPOTENCY_KEY_REUSED, RATE_LIMITED, INTERNAL_ERROR, SIMULATOR_UNAVAILABLE, SERVICE_UNAVAILABLE]
+    AnomalyCode:
+      type: string
+      enum: [SERVER_ERROR, AUTH_FAILURE, CLIENT_ERROR, UNEXPECTED_STATUS, HIGH_LATENCY, ZERO_RECORDS, MISSING_RECORDS, INVALID_METRICS]
+    Severity:
+      type: string
+      enum: [WARNING, CRITICAL]
+    AlertStatus:
+      type: string
+      enum: [ACTIVE, RESOLVED]
+    AiStatus:
+      type: string
+      enum: [PENDING, COMPLETED, FALLBACK]
+    Role:
+      type: string
+      enum: [ADMIN, MANAGER]
+    Permission:
+      type: string
+      enum: [alerts:read, apis:read, telemetry:ingest, alerts:resolve, alerts:regenerate, simulator:control, apis:configure, users:manage, audit:read]
+    TelemetrySource:
+      type: string
+      enum: [api, static_file, live_pull, simulator]
+    NullableInt:
+      type: [integer, 'null']
+    Timestamp:
+      type: string
+      format: date-time
+    NullableTimestamp:
+      type: [string, 'null']
+      format: date-time
+
+    # ── envelopes ──
+    ListMeta:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0 }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [success, error]
+      properties:
+        success: { const: false }
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id]
+          properties:
+            code: { $ref: '#/components/schemas/ErrorCode' }
+            message: { type: string }
+            details: {}
+            request_id: { type: string }
+
+    # ── health / meta ──
+    StatusResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [ok, ready] }
+    HealthCheck:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [up, down] }
+        latency_ms: { type: integer }
+        error: { type: string }
+    HealthResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [status, version, uptime_s, checks, ai_providers]
+          properties:
+            status: { type: string, enum: [ok, degraded] }
+            version: { type: string }
+            uptime_s: { type: integer }
+            checks:
+              type: object
+              required: [database, redis, simulator]
+              properties:
+                database: { $ref: '#/components/schemas/HealthCheck' }
+                redis: { $ref: '#/components/schemas/HealthCheck' }
+                simulator: { $ref: '#/components/schemas/HealthCheck' }
+            ai_providers:
+              type: array
+              items:
+                type: object
+                required: [name, configured, circuit]
+                properties:
+                  name: { type: string, enum: [gemini, openai, mistral] }
+                  configured: { type: boolean }
+                  circuit:
+                    type: object
+                    required: [state, since]
+                    properties:
+                      state: { type: string, enum: [CLOSED, OPEN, HALF_OPEN, UNKNOWN] }
+                      since: { $ref: '#/components/schemas/NullableTimestamp' }
+    MetaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [version, demo_mode, email_enabled, ai_providers, default_thresholds, max_batch_size]
+          properties:
+            version: { type: string }
+            demo_mode: { type: boolean }
+            email_enabled: { type: boolean }
+            ai_providers: { type: array, items: { type: string, enum: [gemini, openai, mistral] } }
+            default_thresholds:
+              type: object
+              required: [latency_warning_ms, latency_critical_ms]
+              properties:
+                latency_warning_ms: { type: integer }
+                latency_critical_ms: { type: integer }
+            max_batch_size: { type: integer }
+
+    # ── ingestion ──
+    TelemetryItem:
+      type: object
+      description: |
+        One API response observation (the assignment PDF shape). Unknown keys are dropped and never stored.
+        Wrong types or out-of-range values are not rejected — they become `INVALID_METRICS` anomalies.
+        Only items without a valid `api_name` (or that are not objects) are rejected.
+      properties:
+        api_name: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$', example: AppointmentAPI }
+        response_time_ms: { type: number, minimum: 0, maximum: 3600000, example: 5500 }
+        status_code: { type: integer, minimum: 100, maximum: 599, example: 500 }
+        records_returned: { type: integer, minimum: 0, maximum: 10000000, example: 0 }
+        observed_at: { type: string, format: date-time, description: Optional; at most 5 minutes in the future }
+    TelemetryBatch:
+      oneOf:
+        - type: array
+          items: { $ref: '#/components/schemas/TelemetryItem' }
+        - type: object
+          required: [logs]
+          properties:
+            logs: { type: array, items: { $ref: '#/components/schemas/TelemetryItem' } }
+            source: { type: string, maxLength: 50 }
+        - $ref: '#/components/schemas/TelemetryItem'
+    StaticIngestRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        file: { type: string, default: sample-telemetry.json, example: pdf-example.json }
+    FetchLiveRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        count: { type: integer, minimum: 1, maximum: 500, default: 10 }
+    RejectedItem:
+      type: object
+      required: [index, reason, field_errors]
+      properties:
+        index: { type: integer }
+        reason: { type: string, enum: [INVALID_ITEM, INVALID_API_NAME] }
+        field_errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+    ItemResult:
+      type: object
+      required: [index, api_name, status]
+      properties:
+        index: { type: integer }
+        api_name: { type: string }
+        status: { type: string, enum: [healthy, anomalous] }
+        severity: { $ref: '#/components/schemas/Severity' }
+        anomaly_types: { type: array, items: { $ref: '#/components/schemas/AnomalyCode' } }
+        alert_id: { type: [string, 'null'], format: uuid }
+    IngestResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [run_id, source, source_detail, received, processed, healthy, anomalous, rejected, alerts_created, alerts_updated, results, rejected_items, alerts]
+          properties:
+            run_id: { type: string, format: uuid }
+            source: { $ref: '#/components/schemas/TelemetrySource' }
+            source_detail: { type: [string, 'null'] }
+            received: { type: integer }
+            processed: { type: integer }
+            healthy: { type: integer }
+            anomalous: { type: integer }
+            rejected: { type: integer }
+            alerts_created: { type: integer }
+            alerts_updated: { type: integer }
+            results: { type: array, items: { $ref: '#/components/schemas/ItemResult' } }
+            rejected_items: { type: array, items: { $ref: '#/components/schemas/RejectedItem' } }
+            alerts:
+              type: array
+              description: Every alert created or updated by this request (with AI text if it arrived within AI_SYNC_WAIT_MS).
+              items: { $ref: '#/components/schemas/Alert' }
+    SampleFileListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { const: true }
+        data:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+    MonitorRun:
+      type: object
+      required: [id, source, source_detail, principal, received, processed, healthy, anomalous, rejected, alerts_created, alerts_updated, duration_ms, request_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        source: { $ref: '#/components/schemas/TelemetrySource' }
+        source_detail: { type: [string, 'null'] }
+        principal: { type: string, description: 'user id, `ingest-key` or `anonymous`' }
+        received: { type: integer }
+        processed: { type: integer }
+        healthy: { type: integer }
+        anomalous: { type: integer }
+        rejected: { type: integer }
+        alerts_created: { type: integer }
+        alerts_updated: { type: integer }
+        duration_ms: { $ref: '#/components/schemas/NullableInt' }
+        request_id: { type: [string, 'null'] }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+    RunListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { const: true }
+        data: { type: array, items: { $ref: '#/components/schemas/MonitorRun' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+
+    # ── alerts ──
+    Alert:
+      description: An incident. Unknown fields never appear (strict).
+      allOf:
+        - $ref: '#/components/schemas/AlertFields'
+      unevaluatedProperties: false
+    AlertFields:
+      type: object
+      required:
+        [id, api_name, status, severity, previous_severity, anomaly_types, alert_message, probable_cause, recommended_action, status_code, response_time_ms, records_returned, last_status_code, last_response_time_ms, last_records_returned, peak_response_time_ms, occurrence_count, ai_status, ai_provider, ai_model, ai_generated_at, first_seen_at, last_seen_at, escalated_at, resolved_at, resolution_source, resolution_note, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        api_name: { type: string }
+        status: { $ref: '#/components/schemas/AlertStatus' }
+        severity: { $ref: '#/components/schemas/Severity' }
+        previous_severity: { type: [string, 'null'], enum: [WARNING, CRITICAL, null] }
+        anomaly_types: { type: array, items: { $ref: '#/components/schemas/AnomalyCode' }, description: Ordered by priority }
+        alert_message: { type: string, description: Render as plain text (it may come from an LLM). }
+        probable_cause: { type: string }
+        recommended_action: { type: string }
+        status_code: { $ref: '#/components/schemas/NullableInt' }
+        response_time_ms: { $ref: '#/components/schemas/NullableInt' }
+        records_returned: { $ref: '#/components/schemas/NullableInt' }
+        last_status_code: { $ref: '#/components/schemas/NullableInt' }
+        last_response_time_ms: { $ref: '#/components/schemas/NullableInt' }
+        last_records_returned: { $ref: '#/components/schemas/NullableInt' }
+        peak_response_time_ms: { $ref: '#/components/schemas/NullableInt' }
+        occurrence_count: { type: integer, minimum: 1 }
+        ai_status: { $ref: '#/components/schemas/AiStatus' }
+        ai_provider: { type: [string, 'null'], enum: [gemini, openai, mistral, template, null] }
+        ai_model: { type: [string, 'null'] }
+        ai_generated_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        first_seen_at: { $ref: '#/components/schemas/Timestamp' }
+        last_seen_at: { $ref: '#/components/schemas/Timestamp' }
+        escalated_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        resolved_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        resolution_source: { type: [string, 'null'], enum: [MANUAL, AUTO, null] }
+        resolution_note: { type: [string, 'null'] }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    TelemetrySample:
+      type: object
+      required: [id, status_code, response_time_ms, records_returned, severity, anomaly_types, observed_at, received_at]
+      properties:
+        id: { type: integer }
+        status_code: { $ref: '#/components/schemas/NullableInt' }
+        response_time_ms: { $ref: '#/components/schemas/NullableInt' }
+        records_returned: { $ref: '#/components/schemas/NullableInt' }
+        severity: { type: [string, 'null'], enum: [WARNING, CRITICAL, null] }
+        anomaly_types: { type: array, items: { $ref: '#/components/schemas/AnomalyCode' } }
+        observed_at: { $ref: '#/components/schemas/Timestamp' }
+        received_at: { $ref: '#/components/schemas/Timestamp' }
+    AlertResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data: { $ref: '#/components/schemas/Alert' }
+    AlertDetailResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/AlertFields'
+          type: object
+          required: [recent_samples]
+          properties:
+            recent_samples: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/TelemetrySample' } }
+          unevaluatedProperties: false
+    AlertListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { const: true }
+        data: { type: array, items: { $ref: '#/components/schemas/Alert' } }
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/ListMeta'
+          type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [ACTIVE, RESOLVED, ALL] }
+    AlertSummaryResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [active, resolved, top_apis, generated_at]
+          properties:
+            active:
+              type: object
+              required: [total, critical, warning]
+              properties:
+                total: { type: integer }
+                critical: { type: integer }
+                warning: { type: integer }
+            resolved: { type: integer }
+            top_apis:
+              type: array
+              items:
+                type: object
+                required: [api_name, active_alerts, critical]
+                properties:
+                  api_name: { type: string }
+                  active_alerts: { type: integer }
+                  critical: { type: integer }
+            generated_at: { $ref: '#/components/schemas/Timestamp' }
+    ResolveRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: string, minLength: 1, maxLength: 500 }
+    StreamTicketResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [ticket, expires_in]
+          properties:
+            ticket: { type: string }
+            expires_in: { type: integer, const: 60 }
+
+    # ── apis ──
+    MonitoredApi:
+      type: object
+      required: [name, latency_warning_ms, latency_critical_ms, expects_records, uses_default_thresholds, first_seen_at, last_seen_at, last_hour, active_alerts]
+      properties:
+        name: { type: string }
+        latency_warning_ms: { type: integer, description: Effective threshold }
+        latency_critical_ms: { type: integer }
+        expects_records: { type: boolean }
+        uses_default_thresholds: { type: boolean }
+        first_seen_at: { $ref: '#/components/schemas/Timestamp' }
+        last_seen_at: { $ref: '#/components/schemas/Timestamp' }
+        last_hour:
+          type: object
+          required: [requests, error_rate, p95_latency_ms]
+          properties:
+            requests: { type: integer }
+            error_rate: { type: number, minimum: 0, maximum: 1, description: Share of requests with status ≥ 400 }
+            p95_latency_ms: { $ref: '#/components/schemas/NullableInt' }
+        active_alerts: { type: integer }
+    ApiListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { const: true }
+        data: { type: array, items: { $ref: '#/components/schemas/MonitoredApi' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+    ThresholdsUpdate:
+      type: object
+      additionalProperties: false
+      required: [latency_warning_ms, latency_critical_ms]
+      description: Both null to return to defaults, or both set with critical > warning (1–600000).
+      properties:
+        latency_warning_ms: { type: [integer, 'null'], minimum: 1, maximum: 600000 }
+        latency_critical_ms: { type: [integer, 'null'], minimum: 1, maximum: 600000 }
+        expects_records: { type: boolean }
+    ThresholdsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [name, latency_warning_ms, latency_critical_ms, expects_records, uses_default_thresholds]
+          properties:
+            name: { type: string }
+            latency_warning_ms: { type: integer }
+            latency_critical_ms: { type: integer }
+            expects_records: { type: boolean }
+            uses_default_thresholds: { type: boolean }
+
+    # ── simulator ──
+    ScenarioListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: array
+          items:
+            type: object
+            required: [name, description]
+            properties:
+              name: { type: string }
+              description: { type: string }
+    ScenarioRunResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [scenario, batches]
+          properties:
+            scenario: { type: string }
+            batches:
+              type: array
+              items:
+                type: object
+                properties:
+                  items: { type: integer }
+                  status: { type: integer }
+                  run_id: { type: [string, 'null'] }
+                  received: { type: integer }
+                  anomalous: { type: integer }
+                  alerts_created: { type: integer }
+                  alerts_updated: { type: integer }
+                  idempotency_key: { type: string }
+                  attempts: { type: integer }
+    StreamStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        interval_ms: { type: integer, minimum: 500, maximum: 60000, default: 2000 }
+        batch_size: { type: integer, minimum: 1, maximum: 100, default: 10 }
+    StreamStatusResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [streaming]
+          properties:
+            streaming: { type: boolean }
+            interval_ms: { $ref: '#/components/schemas/NullableInt' }
+            batch_size: { $ref: '#/components/schemas/NullableInt' }
+            started_at: { $ref: '#/components/schemas/NullableTimestamp' }
+            stops_at: { $ref: '#/components/schemas/NullableTimestamp' }
+            batches_sent: { type: integer }
+            items_sent: { type: integer }
+            consecutive_failures: { type: integer }
+            last_error: { type: [string, 'null'] }
+            stopped_reason: { type: [string, 'null'] }
+
+    # ── auth / users ──
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 128 }
+    AuthUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+    SessionResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          additionalProperties: false
+          required: [access_token, token_type, expires_in, user, permissions]
+          properties:
+            access_token: { type: string }
+            token_type: { const: Bearer }
+            expires_in: { type: integer, description: Seconds }
+            user: { $ref: '#/components/schemas/AuthUser' }
+            permissions: { type: array, items: { $ref: '#/components/schemas/Permission' } }
+    MeResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [user, permissions, profile]
+          properties:
+            user: { $ref: '#/components/schemas/AuthUser' }
+            permissions: { type: array, items: { $ref: '#/components/schemas/Permission' } }
+            profile: { $ref: '#/components/schemas/User' }
+    LogoutResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [logged_out]
+          properties:
+            logged_out: { const: true }
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string, minLength: 1, maxLength: 128 }
+        new_password: { type: string, minLength: 12, maxLength: 128 }
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, is_active, last_login_at, password_changed_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        is_active: { type: boolean }
+        last_login_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        password_changed_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+    UserResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data: { $ref: '#/components/schemas/User' }
+    UserListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { const: true }
+        data: { type: array, items: { $ref: '#/components/schemas/User' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, role]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 12, maxLength: 128 }
+        role: { $ref: '#/components/schemas/Role' }
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+        is_active: { type: boolean }
+
+    # ── audit ──
+    AuditLog:
+      type: object
+      required: [id, actor_type, actor_id, action, target_type, target_id, metadata, ip, request_id, created_at]
+      properties:
+        id: { type: integer }
+        actor_type: { type: string, enum: [user, service, system, anonymous] }
+        actor_id: { type: [string, 'null'], format: uuid }
+        action: { type: string }
+        target_type: { type: [string, 'null'] }
+        target_id: { type: [string, 'null'] }
+        metadata: { type: object }
+        ip: { type: [string, 'null'] }
+        request_id: { type: [string, 'null'] }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+    AuditLogListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { const: true }
+        data: { type: array, items: { $ref: '#/components/schemas/AuditLog' } }
+        meta: { $ref: '#/components/schemas/ListMeta' }
