@@ -1,0 +1,13 @@
+# Separate repository — managed on its own, not part of this backend build
+web-frontend/
+
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+*.tsbuildinfo
+cookies.txt

@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ams-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ams_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ams_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - ams-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ams-redis
+    restart: unless-stopped
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes;
+      else
+        redis-server --appendonly yes;
+      fi'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-redispassword} ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+    networks:
+      - ams-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: ams-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-54282317bbeb5924ea15a4e3a6bc507027980d7af464d40b}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:3001}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ams_db}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redispassword}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-rimux0x}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-"Asdxz12@#"}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-rimux0x@example.com}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Rimux Admin}
+    volumes:
+      - ./express-backend:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ams-network
+
+  frontend:
+    build:
+      context: ./web-frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: ams-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      WATCHPACK_POLLING: "true"
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      INTERNAL_API_URL: http://api:3001
+    volumes:
+      - ./web-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - ams-network
+
+networks:
+  ams-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
