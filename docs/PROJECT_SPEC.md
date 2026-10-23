@@ -1400,9 +1400,9 @@ volumes:
 Work through these in order. After each phase: `npm run lint && npm run typecheck && npm run test:unit` (plus the phase gate), commit with a conventional message, tick the boxes here.
 
 ### Phase 0 — Recon and audit
-- [ ] Inventory the existing repo (services, routes, DB, Docker files) and the existing auth module (location from the kickoff prompt) and compare against this spec. Do not create any frontend code.
-- [ ] Write `docs/AUDIT.md`: gap list per spec section; auth checklist §12.1 with pass/fail + file/line evidence; list of code to port, rewrite or delete.
-- [ ] Create `docs/DECISIONS.md` (ADR log) with the first entries (DB choice, queue choice, dedup strategy, AI-enriches-never-decides, SSE vs WebSocket, ORM, backend-only scope, role mapping `admin`→`ADMIN` / `manager`→`MANAGER` with manager reserved).
+- [x] Inventory the existing repo (services, routes, DB, Docker files) and the existing auth module (location from the kickoff prompt) and compare against this spec. Do not create any frontend code.
+- [x] Write `docs/AUDIT.md`: gap list per spec section; auth checklist §12.1 with pass/fail + file/line evidence; list of code to port, rewrite or delete.
+- [x] Create `docs/DECISIONS.md` (ADR log) with the first entries (DB choice, queue choice, dedup strategy, AI-enriches-never-decides, SSE vs WebSocket, ORM, backend-only scope, role mapping `admin`→`ADMIN` / `manager`→`MANAGER` with manager reserved).
 - **Gate:** `docs/AUDIT.md` exists and covers every section of this spec, the existing auth module's inventory, and every A-item (A1–A22).
 
 ### Phase 1 — Foundation
