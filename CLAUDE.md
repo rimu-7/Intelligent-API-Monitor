@@ -3,6 +3,7 @@
 **Source of truth: `docs/PROJECT_SPEC.md`.** Read it completely before changing code. If this file and the spec disagree, the spec wins — then fix this file.
 
 ## What this project is
+
 A Node.js/Express 5 + TypeScript monorepo that ingests API response telemetry (`POST /monitor`), detects anomalies with a pure deterministic engine, enriches alerts with an LLM (provider failover + deterministic template fallback), stores everything in PostgreSQL, serves active alerts at `GET /alerts`, streams updates over SSE and emails critical incidents. Runs with one command: `docker compose up --build`.
 
 **Scope: backend only.** The UI will be a separate Next.js app built later; this build delivers its API contract (spec §15). Do not create `apps/web`, React code or nginx config.
@@ -12,6 +13,7 @@ A Node.js/Express 5 + TypeScript monorepo that ingests API response telemetry (`
 Apps: `apps/monitor-api` (API :3001 + worker), `apps/telemetry-simulator` (:4400). Shared types: `packages/shared` (`@apimon/shared`). API docs: `http://localhost:3001/docs`.
 
 ## Commands
+
 ```bash
 npm install
 npm run dev:infra          # postgres, redis, mailpit in Docker
@@ -29,6 +31,7 @@ npm run smoke              # end-to-end check against the running stack
 ```
 
 ## How to work
+
 - Execute the phases in spec §19 **in order**. Tick each checkbox in the spec when done so a new session can resume with "Continue from Phase N".
 - After every phase: `npm run lint && npm run typecheck && npm run test:unit`, then the phase's own gate. Fix every failure before moving on. Commit with a conventional message (`feat(monitoring): …`, `fix(auth): …`).
 - Existing code is ported into the target layout with `git mv`; keep what works, rewrite what violates the spec, delete what is superseded. Record non-obvious choices in `docs/DECISIONS.md`.
@@ -37,6 +40,7 @@ npm run smoke              # end-to-end check against the running stack
 - Before using any library named in spec §21 (Express 5, Zod v4, Drizzle, BullMQ, ioredis, rate-limiter-flexible, jose, cors, helmet, swagger-ui-express, LLM SDKs), check the installed version's type definitions or official docs. Do not write API calls from memory.
 
 ## Architecture rules
+
 - Layering: `routes → controller → service → repository`. Controllers parse/respond only. SQL lives only in repositories (or `infrastructure/database`). Services never touch `req`/`res`.
 - `modules/monitoring/anomaly-engine/*` is pure: no I/O, no `Date.now()`, no randomness, no imports from infrastructure.
 - Dependencies are wired in `src/container.ts`; `createApp(container)` never calls `listen()` (tests build the app with test doubles).
@@ -49,11 +53,13 @@ npm run smoke              # end-to-end check against the running stack
 - TypeScript strict; no `any`; no non-null assertions without a comment explaining why.
 
 ## Naming
+
 - Backend files: kebab-case with a role suffix — `alerts.routes.ts`, `alerts.controller.ts`, `alerts.service.ts`, `alerts.repository.ts`, `alerts.schemas.ts`, `alerts.mapper.ts`, `ai-enrichment.processor.ts`.
 - DB: snake_case tables and columns; enums upper-case values.
 - Env vars: UPPER_SNAKE_CASE, documented in `.env.example`.
 
 ## Definition of done (every feature)
+
 1. Behaviour matches the spec section it implements.
 2. Unit tests for logic, integration tests for HTTP/DB behaviour, all green.
 3. Lint and typecheck clean.

@@ -13,7 +13,7 @@ import type { PromptContext } from '../../infrastructure/queue/job-names';
 import type { Queues } from '../../infrastructure/queue/queues';
 import { principalLabel, type Principal } from '../../http/principal';
 import { UnprocessableError } from '../../lib/errors';
-import { buildTemplateAlert } from '../ai/template-alert';
+import { buildTemplateAlert, templateFieldsFromIssues } from '../ai/template-alert';
 import { toAlertDto, toMonitorRunDto } from '../alerts/alerts.mapper';
 import type { AlertsRepository } from '../alerts/alerts.repository';
 import type { EventBus } from '../realtime/event-bus';
@@ -132,7 +132,7 @@ export class MonitoringService {
         responseTimeMs: group.trigger.responseTimeMs,
         recordsReturned: group.trigger.recordsReturned,
         codes: group.codes,
-        issues: group.trigger.issues,
+        ...templateFieldsFromIssues(group.trigger.issues),
         latencyWarningMs: group.thresholds.latencyWarningMs,
       });
       return {

@@ -1,4 +1,4 @@
-import { ANOMALY_PRIORITY, type AnomalyCode, type FieldIssue } from '@apimon/shared';
+import { ANOMALY_PRIORITY, type AnomalyCode, type FieldIssue, type MetricField } from '@apimon/shared';
 
 export interface AlertText {
   alertMessage: string;
@@ -12,9 +12,44 @@ export interface TemplateInput {
   responseTimeMs: number | null;
   recordsReturned: number | null;
   codes: readonly AnomalyCode[];
-  issues: readonly FieldIssue[];
+  /** records_returned was absent (as opposed to present but invalid). */
+  recordsMissing: boolean;
+  /** Fields that were present but invalid (named in the text for INVALID_METRICS). */
+  invalidFields: readonly MetricField[];
   latencyWarningMs: number;
 }
+
+const isRecordsMissing = (issue: FieldIssue) =>
+  issue.field === 'records_returned' && issue.problem === 'missing';
+
+/** From the normalizer's issues (ingestion path). */
+export const templateFieldsFromIssues = (issues: readonly FieldIssue[]) => ({
+  recordsMissing: issues.some(isRecordsMissing),
+  invalidFields: [...new Set(issues.filter((issue) => !isRecordsMissing(issue)).map((issue) => issue.field))],
+});
+
+const NULLABLE: readonly [MetricField, 'statusCode' | 'responseTimeMs' | 'recordsReturned'][] = [
+  ['status_code', 'statusCode'],
+  ['response_time_ms', 'responseTimeMs'],
+  ['records_returned', 'recordsReturned'],
+];
+
+/**
+ * From a stored trigger sample (alerts keep values, not issue kinds): an invalid metric was
+ * stored as null, so the null fields are the invalid ones — except a missing record count.
+ */
+export const templateFieldsFromSample = (
+  sample: { statusCode: number | null; responseTimeMs: number | null; recordsReturned: number | null },
+  codes: readonly AnomalyCode[],
+) => {
+  const recordsMissing = codes.includes('MISSING_RECORDS') && sample.recordsReturned === null;
+  const invalidFields = codes.includes('INVALID_METRICS')
+    ? NULLABLE.filter(
+        ([field, key]) => sample[key] === null && !(field === 'records_returned' && recordsMissing),
+      ).map(([field]) => field)
+    : [];
+  return { recordsMissing, invalidFields };
+};
 
 const IMPACT: Record<AnomalyCode, { impact: (warningMs: number) => string; cause: string; action: string }> =
   {
@@ -77,20 +112,16 @@ export const buildTemplateAlert = (input: TemplateInput): AlertText => {
         ? `${apiName} failed with status ${statusCode}`
         : `${apiName} responded with status ${statusCode}`;
 
-  const recordsMissing = input.issues.some((i) => i.field === 'records_returned' && i.problem === 'missing');
   if (recordsReturned !== null) {
     headline += ` and returned ${recordsReturned} ${recordsReturned === 1 ? 'record' : 'records'}`;
-  } else if (recordsMissing) {
+  } else if (input.recordsMissing) {
     headline += ' and did not report a record count';
   }
   if (responseTimeMs !== null) headline += ` (response time ${responseTimeMs} ms)`;
   headline += '.';
 
-  if (input.codes.includes('INVALID_METRICS')) {
-    const invalid = input.issues
-      .filter((i) => !(i.field === 'records_returned' && i.problem === 'missing'))
-      .map((i) => i.field);
-    headline += ` Invalid fields: ${[...new Set(invalid)].join(', ')}.`;
+  if (input.codes.includes('INVALID_METRICS') && input.invalidFields.length > 0) {
+    headline += ` Invalid fields: ${input.invalidFields.join(', ')}.`;
   }
 
   const primary = ANOMALY_PRIORITY.find((code) => input.codes.includes(code)) ?? 'SERVER_ERROR';

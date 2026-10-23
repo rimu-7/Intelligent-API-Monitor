@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildTemplateAlert, type TemplateInput } from '../../src/modules/ai/template-alert';
+import {
+  buildTemplateAlert,
+  templateFieldsFromIssues,
+  templateFieldsFromSample,
+  type TemplateInput,
+} from '../../src/modules/ai/template-alert';
 import { PDF_TEMPLATE_MESSAGE } from '../helpers/fixtures';
 
 const input = (overrides: Partial<TemplateInput>): TemplateInput => ({
@@ -8,7 +13,8 @@ const input = (overrides: Partial<TemplateInput>): TemplateInput => ({
   responseTimeMs: 300,
   recordsReturned: 10,
   codes: [],
-  issues: [],
+  recordsMissing: false,
+  invalidFields: [],
   latencyWarningMs: 2000,
   ...overrides,
 });
@@ -48,7 +54,7 @@ describe('template alert (§9.6)', () => {
         input({
           recordsReturned: null,
           codes: ['MISSING_RECORDS'],
-          issues: [{ field: 'records_returned', problem: 'missing' }],
+          recordsMissing: true,
         }),
       ).alertMessage,
     ).toBe(
@@ -64,11 +70,11 @@ describe('template alert (§9.6)', () => {
           responseTimeMs: null,
           recordsReturned: null,
           codes: ['INVALID_METRICS', 'MISSING_RECORDS'],
-          issues: [
+          ...templateFieldsFromIssues([
             { field: 'status_code', problem: 'missing' },
             { field: 'response_time_ms', problem: 'missing' },
             { field: 'records_returned', problem: 'missing' },
-          ],
+          ]),
         }),
       ).alertMessage,
     ).toBe(
@@ -82,6 +88,31 @@ describe('template alert (§9.6)', () => {
     );
     expect(text.alertMessage).toBe(
       'AppointmentAPI failed with status 401 and returned 0 records (response time 300 ms). Credentials may be expired or revoked; requests are being rejected.',
+    );
+  });
+
+  it('names the invalid field when rebuilt from a stored sample (AI fallback path)', () => {
+    const sample = { statusCode: 200, responseTimeMs: null, recordsReturned: 12 };
+    expect(templateFieldsFromSample(sample, ['INVALID_METRICS'])).toEqual({
+      recordsMissing: false,
+      invalidFields: ['response_time_ms'],
+    });
+    expect(
+      buildTemplateAlert(
+        input({
+          ...sample,
+          codes: ['INVALID_METRICS'],
+          ...templateFieldsFromSample(sample, ['INVALID_METRICS']),
+        }),
+      ).alertMessage,
+    ).toBe(
+      "AppointmentAPI responded with status 200 and returned 12 records. Invalid fields: response_time_ms. Telemetry is malformed; check the integration's instrumentation.",
+    );
+  });
+
+  it('never prints an empty field list', () => {
+    expect(buildTemplateAlert(input({ codes: ['INVALID_METRICS'] })).alertMessage).not.toContain(
+      'Invalid fields',
     );
   });
 });

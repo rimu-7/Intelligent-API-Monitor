@@ -1458,7 +1458,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** `npm run test:contract` passes; Swagger UI at `http://localhost:3001/docs` can authorize as admin and run the PDF example; every request in `docs/api.http` succeeds against the compose stack.
 
 ### Phase 10 — Hardening and documentation
-- [ ] `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` (§22); smoke test; CI workflow; `npm audit` clean of high/critical prod findings.
+- [x] `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` (§22); smoke test; CI workflow; `npm audit` clean of high/critical prod findings.
 - [ ] MAY: `/metrics` (§16.5).
 - **Gate:** the full acceptance checklist (§20) passes from a clean state.
 

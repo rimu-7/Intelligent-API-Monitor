@@ -1,6 +1,7 @@
 import { ANOMALY_LABELS, type AnomalyCode, type Severity } from '@apimon/shared';
 import type { PromptContext } from '../../infrastructure/queue/job-names';
 import { RULES } from '../monitoring/anomaly-engine/rules';
+import { templateFieldsFromSample } from './template-alert';
 import type { NormalizedTelemetry, Thresholds } from '../monitoring/anomaly-engine/types';
 
 export const PROMPT_VERSION = 'alert-v1';
@@ -45,12 +46,6 @@ export interface PromptInput {
   occurrence_count: number;
 }
 
-const NULLABLE_FIELDS = [
-  ['status_code', 'statusCode'],
-  ['response_time_ms', 'responseTimeMs'],
-  ['records_returned', 'recordsReturned'],
-] as const;
-
 /**
  * Rebuilds the factual anomaly details from the stored trigger sample with the same rules the
  * engine used, so the prompt describes exactly what was detected.
@@ -60,7 +55,7 @@ export const buildPromptInput = (
   thresholds: Thresholds,
   context: PromptContext,
 ): PromptInput => {
-  const recordsMissing = subject.anomalyTypes.includes('MISSING_RECORDS') && subject.recordsReturned === null;
+  const { recordsMissing, invalidFields } = templateFieldsFromSample(subject, subject.anomalyTypes);
   const telemetry: NormalizedTelemetry = {
     index: 0,
     apiName: subject.apiName,
@@ -73,12 +68,10 @@ export const buildPromptInput = (
 
   const anomalies = subject.anomalyTypes.map((code) => {
     if (code === 'INVALID_METRICS') {
-      const invalid = NULLABLE_FIELDS.filter(
-        ([field, key]) => subject[key] === null && !(field === 'records_returned' && recordsMissing),
-      ).map(([field]) => field);
       return {
         code,
-        detail: invalid.length > 0 ? `invalid fields: ${invalid.join(', ')}` : ANOMALY_LABELS[code],
+        detail:
+          invalidFields.length > 0 ? `invalid fields: ${invalidFields.join(', ')}` : ANOMALY_LABELS[code],
       };
     }
     const detail = RULES.find((rule) => rule.code === code)?.evaluate(telemetry, {

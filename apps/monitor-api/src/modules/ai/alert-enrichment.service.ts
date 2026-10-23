@@ -14,7 +14,7 @@ import {
 import type { CircuitBreaker } from './circuit-breaker';
 import { guardOutput } from './output-guard';
 import type { LlmProvider } from './providers/llm-provider';
-import { buildTemplateAlert, type AlertText } from './template-alert';
+import { buildTemplateAlert, templateFieldsFromSample, type AlertText } from './template-alert';
 
 export interface EnrichmentUpdate {
   text: AlertText;
@@ -97,10 +97,7 @@ export class AlertEnrichmentService {
         responseTimeMs: alert.responseTimeMs,
         recordsReturned: alert.recordsReturned,
         codes: anomalyTypes,
-        issues:
-          anomalyTypes.includes('MISSING_RECORDS') && alert.recordsReturned === null
-            ? [{ field: 'records_returned', problem: 'missing' }]
-            : [],
+        ...templateFieldsFromSample(alert, anomalyTypes),
         latencyWarningMs: thresholds.latencyWarningMs,
       }),
       aiStatus: 'FALLBACK',
