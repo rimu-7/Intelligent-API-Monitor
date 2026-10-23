@@ -1445,7 +1445,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** integration groups 14–15 pass; the PDF example produces exactly one email in Mailpit; `docker compose restart redis` → API and worker recover, and pending AI work completes.
 
 ### Phase 8 — Telemetry simulator
-- [ ] Catalog, PRNG generator, scenarios (§14), push client with idempotent retries, stream controller, internal auth; API proxy routes.
+- [x] Catalog, PRNG generator, scenarios (§14), push client with idempotent retries, stream controller, internal auth; API proxy routes.
 - **Gate:** every scenario runs end to end through the API proxy; `outage-burst` yields one alert with `occurrence_count 25` and one email; the stream auto-stops at `STREAM_MAX_DURATION_MS`.
 
 ### Phase 9 — API contract and developer experience (replaces the UI phase)

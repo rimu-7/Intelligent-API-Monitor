@@ -36,7 +36,10 @@ beforeEach(async () => {
   mailer.sent = [];
 });
 
-const waitFor = async <T>(fn: () => Promise<T | undefined> | T | undefined, timeoutMs = 10_000): Promise<T> => {
+const waitFor = async <T>(
+  fn: () => Promise<T | undefined> | T | undefined,
+  timeoutMs = 10_000,
+): Promise<T> => {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = await fn();
