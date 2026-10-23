@@ -1429,7 +1429,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** unit tests + integration group 13 pass; every A-item is ✓ in `docs/AUDIT.md` with evidence; a search for role comparisons (`role ===`, `role ==`, `.role !==`) finds none outside `packages/shared/src/auth.ts`.
 
 ### Phase 4 — Telemetry contract and anomaly engine
-- [ ] Normalizer (§6.2), rules and engine (§7), fingerprint, thresholds service, sample files (§6.5).
+- [x] Normalizer (§6.2), rules and engine (§7), fingerprint, thresholds service, sample files (§6.5).
 - **Gate:** every row of §6.2 and §7.4 is a passing unit test.
 
 ### Phase 5 — Ingestion pipeline and alerts API
