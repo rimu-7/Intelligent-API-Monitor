@@ -1,4 +1,5 @@
 import type { AnomalyCode, Severity } from '@apimon/shared';
+import type { EnrichmentUpdate } from '../ai/alert-enrichment.service';
 import { and, arrayContains, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { DbExecutor } from '../../infrastructure/database/client';
 import {
@@ -126,6 +127,35 @@ export class AlertsRepository {
         resolutionNote: resolution.note,
       })
       .where(and(eq(alerts.id, id), eq(alerts.status, 'ACTIVE')))
+      .returning();
+    return row;
+  }
+
+  /** Writes AI (or template) text only if the alert is still PENDING at this version (§9.1). */
+  async applyEnrichment(
+    id: string,
+    enrichmentVersion: number,
+    update: EnrichmentUpdate,
+  ): Promise<AlertRow | undefined> {
+    const [row] = await this.db
+      .update(alerts)
+      .set({
+        alertMessage: update.text.alertMessage,
+        probableCause: update.text.probableCause,
+        recommendedAction: update.text.recommendedAction,
+        aiStatus: update.aiStatus,
+        aiProvider: update.provider,
+        aiModel: update.model,
+        aiPromptVersion: update.promptVersion,
+        aiGeneratedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(alerts.id, id),
+          eq(alerts.enrichmentVersion, enrichmentVersion),
+          eq(alerts.aiStatus, 'PENDING'),
+        ),
+      )
       .returning();
     return row;
   }

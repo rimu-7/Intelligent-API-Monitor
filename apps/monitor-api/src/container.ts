@@ -25,6 +25,13 @@ import { MonitoringRepository } from './modules/monitoring/monitoring.repository
 import { MonitoringService } from './modules/monitoring/monitoring.service';
 import { resolveSamplesDir, StaticSources } from './modules/monitoring/static-sources';
 import { ThresholdsService } from './modules/monitoring/thresholds.service';
+import { AiCache } from './modules/ai/ai-cache';
+import { AlertEnrichmentService } from './modules/ai/alert-enrichment.service';
+import type { CircuitBreaker } from './modules/ai/circuit-breaker';
+import { createBreakers } from './modules/ai/circuit-registry';
+import { createProviders } from './modules/ai/providers';
+import type { LlmProvider } from './modules/ai/providers/llm-provider';
+import { NotificationsRepository } from './modules/notifications/notifications.repository';
 import { EventBus } from './modules/realtime/event-bus';
 import { SimulatorClient } from './modules/simulator/simulator.client';
 import { UsersController } from './modules/users/users.controller';
@@ -42,6 +49,8 @@ export interface ContainerOptions {
   withAiEvents?: boolean;
   /** Test double for the simulator HTTP client. */
   simulator?: SimulatorClient;
+  /** Test doubles for the LLM providers (default: configured providers from env). */
+  llmProviders?: LlmProvider[];
 }
 
 /** Composition root: every dependency is built here; nothing else constructs infrastructure. */
@@ -70,6 +79,11 @@ export interface Container {
   monitoringController: MonitoringController;
   alertsController: AlertsController;
   apisController: ApisController;
+  queuePrefix: string;
+  providers: readonly LlmProvider[];
+  breakers: ReadonlyMap<string, CircuitBreaker>;
+  enrichment: AlertEnrichmentService;
+  notifications: NotificationsRepository;
   /** Runs during shutdown before HTTP connections are drained (ends SSE streams). */
   beforeHttpClose?: () => Promise<void>;
   close(): Promise<void>;
@@ -114,9 +128,10 @@ export const buildContainer = (options: ContainerOptions): Container => {
   const health = new HealthService({ env, database, redis, isShuttingDown: () => lifecycle.shuttingDown });
 
   // Monitoring, alerts, APIs.
+  const queuePrefix = options.queuePrefix ?? 'apimon';
   const queues = new Queues({
     redisUrl: env.REDIS_URL,
-    prefix: options.queuePrefix ?? 'apimon',
+    prefix: queuePrefix,
     logger,
     withAiEvents: options.withAiEvents ?? false,
   });
@@ -131,6 +146,10 @@ export const buildContainer = (options: ContainerOptions): Container => {
   const alertsRepository = new AlertsRepository(db);
   const simulator =
     options.simulator ?? new SimulatorClient(env.SIMULATOR_URL, env.INTERNAL_SERVICE_KEY, logger);
+  const staticSources = new StaticSources(resolveSamplesDir(env.SAMPLES_DIR));
+  if (staticSources.list().length === 0 && options.service === 'monitor-api') {
+    logger.warn({ samples_dir: staticSources.directory ?? null }, 'no sample files found; static ingestion is unavailable');
+  }
   const monitoring = new MonitoringService({
     env,
     repository: new MonitoringRepository(db, logger),
@@ -138,12 +157,26 @@ export const buildContainer = (options: ContainerOptions): Container => {
     thresholds,
     queues,
     events,
-    staticSources: new StaticSources(resolveSamplesDir(env.SAMPLES_DIR)),
+    staticSources,
     simulator,
     logger,
   });
   const alerts = new AlertsService({ repository: alertsRepository, redis, queues, events, audit, logger });
   const apis = new ApisService({ repository: apisRepository, thresholds, redis, audit, logger });
+
+  // AI enrichment (executed by the worker).
+  const providers = options.llmProviders ?? createProviders(env);
+  const breakers = createBreakers(providers, redis, logger);
+  const enrichment = new AlertEnrichmentService({
+    store: alertsRepository,
+    thresholds,
+    providers,
+    breakers,
+    cache: new AiCache(redis, env.AI_CACHE_TTL_SECONDS, logger),
+    timeoutMs: env.AI_TIMEOUT_MS,
+    logger,
+  });
+  const notifications = new NotificationsRepository(db);
 
   const close = async () => {
     await queues.close();
@@ -174,6 +207,11 @@ export const buildContainer = (options: ContainerOptions): Container => {
     monitoringController: new MonitoringController(monitoring),
     alertsController: new AlertsController(alerts),
     apisController: new ApisController(apis),
+    queuePrefix,
+    providers,
+    breakers,
+    enrichment,
+    notifications,
     close,
   };
 };

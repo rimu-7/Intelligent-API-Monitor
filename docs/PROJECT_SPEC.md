@@ -1437,7 +1437,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** integration groups 1–9, 11, 12 pass.
 
 ### Phase 6 — AI enrichment
-- [ ] Providers, circuit breaker, output guard, template, cache, enrichment service, `ai-enrichment` worker, sync wait, regenerate.
+- [x] Providers, circuit breaker, output guard, template, cache, enrichment service, `ai-enrichment` worker, sync wait, regenerate.
 - **Gate:** related unit tests + integration group 10 pass; with real keys in `.env`, the PDF example produces `COMPLETED` text that passes the guard; with keys removed, `FALLBACK` with the exact template string.
 
 ### Phase 7 — Realtime, notifications, scheduled jobs

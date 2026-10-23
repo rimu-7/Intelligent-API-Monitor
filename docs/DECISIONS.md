@@ -69,3 +69,11 @@ Docker Compose parses `SMTP_HOST=     # blank = …` as the value `# blank = …
 - **`error_rate`** in `GET /apis` is the share of last-hour requests with `status_code ≥ 400`; invalid telemetry (null status) is not counted as an error.
 - **List query strings tolerate unknown keys** (cache-busting parameters); request bodies are strict.
 - **Thresholds can be configured before an API is first seen** (`PATCH /apis/:name/thresholds` upserts the row).
+
+## ADR-016 AI enrichment details
+- **What opens a circuit.** §9.4 lists timeouts, network errors, 5xx and 429; acceptance check 11 also requires an *invalid key* (401/403) to open it. Every failed provider call therefore counts; only output-guard rejections do not (the call itself worked).
+- **SDK retries are disabled** (Gemini `retryOptions.attempts = 1`, OpenAI `maxRetries: 0`, Mistral `retryConfig: none`): failover and the breaker own retry behaviour, and the `AI_TIMEOUT_MS` budget stays honest.
+- **OpenAI `max_completion_tokens`** is used instead of the deprecated `max_tokens` (openai 7.x types).
+- **Prompt details are rebuilt from the trigger sample** with the engine's own rules at enrichment time (alerts do not store per-field issue kinds). For `INVALID_METRICS` the detail names the null fields without guessing the problem kind.
+- **Allowed numbers** for the guard include the latency thresholds in seconds as well as the response time (e.g. "5 s threshold").
+- **Template fallback text** is recomputed from the stored trigger sample, so FALLBACK text is identical to the initial text.

@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { findUp } from '../../lib/paths';
@@ -20,7 +20,8 @@ export class StaticSources {
 
   constructor(readonly directory: string | undefined) {
     const entries = new Map<string, string>();
-    if (directory) {
+    // A missing directory means an empty allowlist (the worker has no samples mount).
+    if (directory && existsSync(directory)) {
       for (const name of readdirSync(directory)) {
         const full = path.join(directory, name);
         if (SAMPLE_FILE_PATTERN.test(name) && statSync(full).isFile()) entries.set(name, full);

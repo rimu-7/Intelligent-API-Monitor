@@ -20,9 +20,7 @@ describe('static sample allowlist (§6.4)', () => {
     'PDF-EXAMPLE.JSON',
     '',
   ])('rejects %j', (name) => {
-    expect(() => sources.resolve(name)).toThrow(
-      expect.objectContaining({ code: 'UNKNOWN_SAMPLE_FILE' }),
-    );
+    expect(() => sources.resolve(name)).toThrow(expect.objectContaining({ code: 'UNKNOWN_SAMPLE_FILE' }));
   });
 
   it('reads an allowlisted file', async () => {
@@ -60,5 +58,11 @@ describe('ingestion envelope (§6.1)', () => {
     [[1, 2, 3], 'BATCH_TOO_LARGE'],
   ])('rejects %j with %s', (body, code) => {
     expect(() => parseEnvelope(body, 2)).toThrow(expect.objectContaining({ code }));
+  });
+});
+
+describe('missing samples directory', () => {
+  it('yields an empty allowlist instead of crashing', () => {
+    expect(new StaticSources('/definitely/not/here').list()).toEqual([]);
   });
 });
