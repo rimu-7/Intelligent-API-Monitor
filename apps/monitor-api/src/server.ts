@@ -6,7 +6,7 @@ import { buildContainer } from './container';
 import { installCrashHandlers, onShutdownSignal } from './infrastructure/process';
 
 const env = loadEnv();
-const container = buildContainer({ env, service: 'monitor-api' });
+const container = buildContainer({ env, service: 'monitor-api', withAiEvents: true });
 const { logger } = container;
 installCrashHandlers(logger);
 logStartupBanner(logger, env, 'monitor-api');

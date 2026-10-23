@@ -1433,7 +1433,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** every row of §6.2 and §7.4 is a passing unit test.
 
 ### Phase 5 — Ingestion pipeline and alerts API
-- [ ] `POST /monitor` (+ `/api/v1/monitor`), aggregator, transactional repository with the upsert (§8.2), chunking, deadlock retry, idempotency (§8.3), static ingestion (§6.4), runs endpoint, alerts endpoints (§11.2), APIs endpoints, rate limits (§16.3).
+- [x] `POST /monitor` (+ `/api/v1/monitor`), aggregator, transactional repository with the upsert (§8.2), chunking, deadlock retry, idempotency (§8.3), static ingestion (§6.4), runs endpoint, alerts endpoints (§11.2), APIs endpoints, rate limits (§16.3).
 - **Gate:** integration groups 1–9, 11, 12 pass.
 
 ### Phase 6 — AI enrichment

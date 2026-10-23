@@ -60,3 +60,12 @@ Docker Compose parses `SMTP_HOST=     # blank = …` as the value `# blank = …
 - **Refresh failures clear the cookie** (except `REFRESH_RACE`, where the cookie already holds the winner's token).
 - **Deactivation instead of deletion**, and ban/unban became `is_active` (ADR-010). Session listing/revocation and profile editing from the original module were dropped: there is no server session table any more and §11.2 does not include them.
 - **Login failure audit** stores the submitted email and a reason (`unknown_email` / `bad_password` / `inactive`) for admins investigating credential stuffing; the HTTP response is identical for all three (A3).
+
+## ADR-015 Ingestion details
+- **Template text is written in the ingestion transaction** (§9.6 runs in Phase 5, not 6): every alert has valid text from the first moment, and the AI only ever replaces it.
+- **`source = simulator`.** A batch pushed with the ingest key whose envelope `source` starts with `simulator` is recorded as `source = 'simulator'` (`source_detail` keeps the label, e.g. `simulator:outage-burst`). Everything else posted to `/monitor` is `api`.
+- **Ingestion rate limit key.** "Per principal": users by id, the ingest key as one principal, anonymous demo callers by IP (otherwise one anonymous client could starve all others).
+- **Idempotency covers every ingestion route** (`/monitor`, `/api/v1/monitor`, `/static`, `/fetch-live`); the two `/monitor` paths share one scope so a retry on either path replays. A client disconnect before the response releases the key.
+- **`error_rate`** in `GET /apis` is the share of last-hour requests with `status_code ≥ 400`; invalid telemetry (null status) is not counted as an error.
+- **List query strings tolerate unknown keys** (cache-busting parameters); request bodies are strict.
+- **Thresholds can be configured before an API is first seen** (`PATCH /apis/:name/thresholds` upserts the row).

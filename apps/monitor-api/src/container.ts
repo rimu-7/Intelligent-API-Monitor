@@ -12,7 +12,21 @@ import { PasswordService } from './modules/auth/password.service';
 import { RefreshTokenRepository } from './modules/auth/refresh-token.repository';
 import { TokenService } from './modules/auth/token.service';
 import { UserCache } from './modules/auth/user-cache';
+import { Queues } from './infrastructure/queue/queues';
+import { AlertsController } from './modules/alerts/alerts.controller';
+import { AlertsRepository } from './modules/alerts/alerts.repository';
+import { AlertsService } from './modules/alerts/alerts.service';
+import { ApisController } from './modules/apis/apis.controller';
+import { ApisRepository } from './modules/apis/apis.repository';
+import { ApisService } from './modules/apis/apis.service';
 import { HealthService } from './modules/health/health.service';
+import { MonitoringController } from './modules/monitoring/monitoring.controller';
+import { MonitoringRepository } from './modules/monitoring/monitoring.repository';
+import { MonitoringService } from './modules/monitoring/monitoring.service';
+import { resolveSamplesDir, StaticSources } from './modules/monitoring/static-sources';
+import { ThresholdsService } from './modules/monitoring/thresholds.service';
+import { EventBus } from './modules/realtime/event-bus';
+import { SimulatorClient } from './modules/simulator/simulator.client';
 import { UsersController } from './modules/users/users.controller';
 import { UsersRepository } from './modules/users/users.repository';
 import { UsersService } from './modules/users/users.service';
@@ -22,6 +36,12 @@ export interface ContainerOptions {
   /** Log `service` field: monitor-api | monitor-worker | migrate | test. */
   service: string;
   logger?: Logger;
+  /** BullMQ key prefix: "apimon" (default) or "apimon-test". */
+  queuePrefix?: string;
+  /** Only the API process needs QueueEvents (sync wait for AI text). */
+  withAiEvents?: boolean;
+  /** Test double for the simulator HTTP client. */
+  simulator?: SimulatorClient;
 }
 
 /** Composition root: every dependency is built here; nothing else constructs infrastructure. */
@@ -40,6 +60,16 @@ export interface Container {
   health: HealthService;
   authController: AuthController;
   usersController: UsersController;
+  queues: Queues;
+  events: EventBus;
+  thresholds: ThresholdsService;
+  alertsRepository: AlertsRepository;
+  alerts: AlertsService;
+  monitoring: MonitoringService;
+  simulator: SimulatorClient;
+  monitoringController: MonitoringController;
+  alertsController: AlertsController;
+  apisController: ApisController;
   /** Runs during shutdown before HTTP connections are drained (ends SSE streams). */
   beforeHttpClose?: () => Promise<void>;
   close(): Promise<void>;
@@ -83,7 +113,40 @@ export const buildContainer = (options: ContainerOptions): Container => {
 
   const health = new HealthService({ env, database, redis, isShuttingDown: () => lifecycle.shuttingDown });
 
+  // Monitoring, alerts, APIs.
+  const queues = new Queues({
+    redisUrl: env.REDIS_URL,
+    prefix: options.queuePrefix ?? 'apimon',
+    logger,
+    withAiEvents: options.withAiEvents ?? false,
+  });
+  const events = new EventBus(redis, logger);
+  const apisRepository = new ApisRepository(db);
+  const thresholds = new ThresholdsService(
+    apisRepository,
+    redis,
+    { latencyWarningMs: env.LATENCY_WARNING_MS, latencyCriticalMs: env.LATENCY_CRITICAL_MS },
+    logger,
+  );
+  const alertsRepository = new AlertsRepository(db);
+  const simulator =
+    options.simulator ?? new SimulatorClient(env.SIMULATOR_URL, env.INTERNAL_SERVICE_KEY, logger);
+  const monitoring = new MonitoringService({
+    env,
+    repository: new MonitoringRepository(db, logger),
+    alerts: alertsRepository,
+    thresholds,
+    queues,
+    events,
+    staticSources: new StaticSources(resolveSamplesDir(env.SAMPLES_DIR)),
+    simulator,
+    logger,
+  });
+  const alerts = new AlertsService({ repository: alertsRepository, redis, queues, events, audit, logger });
+  const apis = new ApisService({ repository: apisRepository, thresholds, redis, audit, logger });
+
   const close = async () => {
+    await queues.close();
     await Promise.allSettled([closeRedis(redis), database.close()]);
   };
 
@@ -101,6 +164,16 @@ export const buildContainer = (options: ContainerOptions): Container => {
     health,
     authController: new AuthController(authService, env),
     usersController: new UsersController(usersService),
+    queues,
+    events,
+    thresholds,
+    alertsRepository,
+    alerts,
+    monitoring,
+    simulator,
+    monitoringController: new MonitoringController(monitoring),
+    alertsController: new AlertsController(alerts),
+    apisController: new ApisController(apis),
     close,
   };
 };

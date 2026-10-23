@@ -33,3 +33,6 @@ export const telemetry = (overrides: Partial<NormalizedTelemetry> = {}): Normali
   issues: [] as FieldIssue[],
   ...overrides,
 });
+
+export const INGEST_KEY = 'test-ingest-key-0123456789abcdef0123456789abcdef';
+export const ingestHeaders = { 'x-ingest-key': INGEST_KEY };

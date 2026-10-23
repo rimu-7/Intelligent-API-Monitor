@@ -67,6 +67,8 @@ export const createTestContext = async (
     env,
     service: 'test',
     logger: pino({ level: 'silent' }),
+    queuePrefix: 'apimon-test',
+    withAiEvents: true,
     ...containerOptions,
   });
   const { app, registry } = createApp(container);

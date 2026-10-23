@@ -10,11 +10,14 @@ import { notFound } from './http/middleware/not-found';
 import { clientIp, createLimiter, rateLimit } from './http/middleware/rate-limit';
 import { requestContext } from './http/middleware/request-context';
 import { RouteRegistry, SecureRouter } from './http/secure-router';
+import { registerAlertsRoutes } from './modules/alerts/alerts.routes';
+import { registerApisRoutes } from './modules/apis/apis.routes';
 import { registerAuditRoutes } from './modules/audit/audit.routes';
 import { registerAuthRoutes } from './modules/auth/auth.routes';
 import { docsHelmet, loadOpenapiDocument, registerDocsRoutes } from './modules/docs/docs.routes';
 import { registerHealthRoutes } from './modules/health/health.routes';
 import { registerMetaRoutes } from './modules/meta/meta.routes';
+import { registerMonitoringRoutes } from './modules/monitoring/monitoring.routes';
 import { registerUsersRoutes } from './modules/users/users.routes';
 
 export const API_PREFIX = '/api/v1';
@@ -121,6 +124,9 @@ export const createApp = (
   registerHealthRoutes(root, container.health);
   registerDocsRoutes(app, root, options.openapiDocument ?? loadOpenapiDocument());
   registerMetaRoutes(api, env);
+  registerMonitoringRoutes(api, root, container.monitoringController, { redis, logger });
+  registerAlertsRoutes(api, root, container.alertsController, { redis, logger });
+  registerApisRoutes(api, container.apisController);
   registerAuthRoutes(api, container.authController, { env, redis, logger });
   registerUsersRoutes(api, container.usersController);
   registerAuditRoutes(api, container.audit);
