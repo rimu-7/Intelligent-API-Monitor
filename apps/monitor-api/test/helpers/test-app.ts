@@ -69,8 +69,10 @@ export const createTestContext = async (
     logger: pino({ level: 'silent' }),
     queuePrefix: 'apimon-test',
     withAiEvents: true,
+    withRealtime: true,
     ...containerOptions,
   });
+  await container.sseHub?.start();
   const { app, registry } = createApp(container);
 
   const reset = async () => {

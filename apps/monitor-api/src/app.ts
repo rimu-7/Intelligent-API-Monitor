@@ -18,6 +18,7 @@ import { docsHelmet, loadOpenapiDocument, registerDocsRoutes } from './modules/d
 import { registerHealthRoutes } from './modules/health/health.routes';
 import { registerMetaRoutes } from './modules/meta/meta.routes';
 import { registerMonitoringRoutes } from './modules/monitoring/monitoring.routes';
+import { registerRealtimeRoutes } from './modules/realtime/realtime.routes';
 import { registerUsersRoutes } from './modules/users/users.routes';
 
 export const API_PREFIX = '/api/v1';
@@ -125,6 +126,8 @@ export const createApp = (
   registerDocsRoutes(app, root, options.openapiDocument ?? loadOpenapiDocument());
   registerMetaRoutes(api, env);
   registerMonitoringRoutes(api, root, container.monitoringController, { redis, logger });
+  if (container.sseHub)
+    registerRealtimeRoutes(api, { hub: container.sseHub, tickets: container.streamTickets });
   registerAlertsRoutes(api, root, container.alertsController, { redis, logger });
   registerApisRoutes(api, container.apisController);
   registerAuthRoutes(api, container.authController, { env, redis, logger });

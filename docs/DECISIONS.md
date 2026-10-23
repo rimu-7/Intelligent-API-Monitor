@@ -77,3 +77,10 @@ Docker Compose parses `SMTP_HOST=     # blank = …` as the value `# blank = …
 - **Prompt details are rebuilt from the trigger sample** with the engine's own rules at enrichment time (alerts do not store per-field issue kinds). For `INVALID_METRICS` the detail names the null fields without guessing the problem kind.
 - **Allowed numbers** for the guard include the latency thresholds in seconds as well as the response time (e.g. "5 s threshold").
 - **Template fallback text** is recomputed from the stored trigger sample, so FALLBACK text is identical to the initial text.
+
+## ADR-017 Realtime and background-job details
+- **SSE access.** `GET /alerts/stream` accepts a single-use ticket, a bearer token (non-browser clients such as `curl`), or anonymous callers in demo mode. Per-stream limits key on the user id, or on the client IP for anonymous streams.
+- **Reconciler and BullMQ dedup.** Re-enqueueing with the same job id is ignored while a job with that id exists. For a PENDING alert whose job already *failed*, the reconciler calls `job.retry()`; if the job *completed* without updating the alert, it is removed and re-added.
+- **Email subject** follows §13.2 for NEW notifications; ESCALATED ones append ` (escalated)` and show `WARNING → CRITICAL`.
+- **Retention** uses `telemetry_logs.observed_at` (indexed) and `rejected_telemetry.received_at`; runs are deleted only when no telemetry or rejected rows reference them.
+- **Missing samples directory** (the worker has no mount) yields an empty allowlist instead of a crash.

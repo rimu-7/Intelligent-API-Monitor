@@ -1,6 +1,6 @@
 import type { AnomalyCode, Severity } from '@apimon/shared';
 import type { EnrichmentUpdate } from '../ai/alert-enrichment.service';
-import { and, arrayContains, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, arrayContains, count, desc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { DbExecutor } from '../../infrastructure/database/client';
 import {
   alerts,
@@ -129,6 +129,35 @@ export class AlertsRepository {
       .where(and(eq(alerts.id, id), eq(alerts.status, 'ACTIVE')))
       .returning();
     return row;
+  }
+
+  /** Reconciler (§13.4): alerts stuck in PENDING for more than `olderThanSeconds`. */
+  findStalePending(olderThanSeconds: number, limit = 200) {
+    return this.db
+      .select({ id: alerts.id, enrichmentVersion: alerts.enrichmentVersion, escalatedAt: alerts.escalatedAt })
+      .from(alerts)
+      .where(
+        and(
+          eq(alerts.aiStatus, 'PENDING'),
+          lt(alerts.updatedAt, sql`now() - make_interval(secs => ${olderThanSeconds})`),
+        ),
+      )
+      .orderBy(alerts.updatedAt)
+      .limit(limit);
+  }
+
+  /** Auto-resolve (§13.4): ACTIVE alerts with no recurrence for `minutes`. */
+  autoResolveInactive(minutes: number, note: string): Promise<AlertRow[]> {
+    return this.db
+      .update(alerts)
+      .set({ status: 'RESOLVED', resolvedAt: new Date(), resolutionSource: 'AUTO', resolutionNote: note })
+      .where(
+        and(
+          eq(alerts.status, 'ACTIVE'),
+          lt(alerts.lastSeenAt, sql`now() - make_interval(mins => ${minutes})`),
+        ),
+      )
+      .returning();
   }
 
   /** Writes AI (or template) text only if the alert is still PENDING at this version (§9.1). */

@@ -2,6 +2,7 @@ import type { Redis } from 'ioredis';
 import type { Env } from './config/env';
 import { createDatabase, type Database, type DatabaseHandle } from './infrastructure/database/client';
 import { createLogger, type Logger } from './infrastructure/logger';
+import { createMailer, type Mailer } from './infrastructure/mail/mailer';
 import { closeRedis, createRedis } from './infrastructure/redis/connections';
 import { AuditRepository } from './modules/audit/audit.repository';
 import { AuditService } from './modules/audit/audit.service';
@@ -32,7 +33,10 @@ import { createBreakers } from './modules/ai/circuit-registry';
 import { createProviders } from './modules/ai/providers';
 import type { LlmProvider } from './modules/ai/providers/llm-provider';
 import { NotificationsRepository } from './modules/notifications/notifications.repository';
+import { NotificationsService } from './modules/notifications/notifications.service';
 import { EventBus } from './modules/realtime/event-bus';
+import { SseHub } from './modules/realtime/sse-hub';
+import { StreamTickets } from './modules/realtime/stream-tickets';
 import { SimulatorClient } from './modules/simulator/simulator.client';
 import { UsersController } from './modules/users/users.controller';
 import { UsersRepository } from './modules/users/users.repository';
@@ -51,6 +55,10 @@ export interface ContainerOptions {
   simulator?: SimulatorClient;
   /** Test doubles for the LLM providers (default: configured providers from env). */
   llmProviders?: LlmProvider[];
+  /** Test double for SMTP. */
+  mailer?: Mailer;
+  /** API processes subscribe to realtime events for SSE; the worker does not. */
+  withRealtime?: boolean;
 }
 
 /** Composition root: every dependency is built here; nothing else constructs infrastructure. */
@@ -84,6 +92,11 @@ export interface Container {
   breakers: ReadonlyMap<string, CircuitBreaker>;
   enrichment: AlertEnrichmentService;
   notifications: NotificationsRepository;
+  notificationsService: NotificationsService;
+  monitoringRepository: MonitoringRepository;
+  streamTickets: StreamTickets;
+  /** Present when `withRealtime` (API processes). */
+  sseHub: SseHub | undefined;
   /** Runs during shutdown before HTTP connections are drained (ends SSE streams). */
   beforeHttpClose?: () => Promise<void>;
   close(): Promise<void>;
@@ -148,11 +161,15 @@ export const buildContainer = (options: ContainerOptions): Container => {
     options.simulator ?? new SimulatorClient(env.SIMULATOR_URL, env.INTERNAL_SERVICE_KEY, logger);
   const staticSources = new StaticSources(resolveSamplesDir(env.SAMPLES_DIR));
   if (staticSources.list().length === 0 && options.service === 'monitor-api') {
-    logger.warn({ samples_dir: staticSources.directory ?? null }, 'no sample files found; static ingestion is unavailable');
+    logger.warn(
+      { samples_dir: staticSources.directory ?? null },
+      'no sample files found; static ingestion is unavailable',
+    );
   }
+  const monitoringRepository = new MonitoringRepository(db, logger);
   const monitoring = new MonitoringService({
     env,
-    repository: new MonitoringRepository(db, logger),
+    repository: monitoringRepository,
     alerts: alertsRepository,
     thresholds,
     queues,
@@ -177,10 +194,30 @@ export const buildContainer = (options: ContainerOptions): Container => {
     logger,
   });
   const notifications = new NotificationsRepository(db);
+  const mailer = options.mailer ?? createMailer(env);
+  const notificationsService = new NotificationsService({
+    repository: notifications,
+    alerts: alertsRepository,
+    mailer,
+    to: env.ALERT_EMAIL_TO,
+    publicWebUrl: env.PUBLIC_WEB_URL,
+    logger,
+  });
+
+  // Realtime: single-use SSE tickets; the hub needs its own subscriber connection.
+  const streamTickets = new StreamTickets(redis);
+  const subscriber = options.withRealtime ? createRedis(env.REDIS_URL, 'subscriber', logger) : undefined;
+  const sseHub = subscriber ? new SseHub(subscriber, logger) : undefined;
 
   const close = async () => {
+    await sseHub?.shutdown();
     await queues.close();
-    await Promise.allSettled([closeRedis(redis), database.close()]);
+    mailer.close();
+    await Promise.allSettled([
+      closeRedis(redis),
+      subscriber ? closeRedis(subscriber) : undefined,
+      database.close(),
+    ]);
   };
 
   return {
@@ -212,6 +249,13 @@ export const buildContainer = (options: ContainerOptions): Container => {
     breakers,
     enrichment,
     notifications,
+    notificationsService,
+    monitoringRepository,
+    streamTickets,
+    sseHub,
+    beforeHttpClose: async () => {
+      await sseHub?.shutdown();
+    },
     close,
   };
 };

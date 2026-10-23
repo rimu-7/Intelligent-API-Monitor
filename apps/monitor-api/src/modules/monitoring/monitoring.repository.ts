@@ -270,6 +270,33 @@ export class MonitoringRepository {
     });
   }
 
+  /** Retention (§13.4): deletes up to `batchSize` telemetry logs older than `days`; returns the count. */
+  async deleteOldTelemetry(days: number, batchSize: number): Promise<number> {
+    const result = await this.db.execute(sql`
+      DELETE FROM telemetry_logs WHERE id IN (
+        SELECT id FROM telemetry_logs WHERE observed_at < now() - make_interval(days => ${days}) LIMIT ${batchSize}
+      )`);
+    return result.rowCount ?? 0;
+  }
+
+  async deleteOldRejected(days: number, batchSize: number): Promise<number> {
+    const result = await this.db.execute(sql`
+      DELETE FROM rejected_telemetry WHERE id IN (
+        SELECT id FROM rejected_telemetry WHERE received_at < now() - make_interval(days => ${days}) LIMIT ${batchSize}
+      )`);
+    return result.rowCount ?? 0;
+  }
+
+  /** Runs older than `days` with no remaining telemetry or rejected rows. */
+  async deleteEmptyOldRuns(days: number): Promise<number> {
+    const result = await this.db.execute(sql`
+      DELETE FROM monitor_runs r
+      WHERE r.created_at < now() - make_interval(days => ${days})
+        AND NOT EXISTS (SELECT 1 FROM telemetry_logs l WHERE l.run_id = r.id)
+        AND NOT EXISTS (SELECT 1 FROM rejected_telemetry j WHERE j.run_id = r.id)`);
+    return result.rowCount ?? 0;
+  }
+
   async listRuns(limit: number): Promise<MonitorRunRow[]> {
     return this.db
       .select()

@@ -1441,7 +1441,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** related unit tests + integration group 10 pass; with real keys in `.env`, the PDF example produces `COMPLETED` text that passes the guard; with keys removed, `FALLBACK` with the exact template string.
 
 ### Phase 7 — Realtime, notifications, scheduled jobs
-- [ ] Event bus, SSE hub with tickets and limits, email processor with Mailpit, reconcile / auto-resolve / retention schedulers.
+- [x] Event bus, SSE hub with tickets and limits, email processor with Mailpit, reconcile / auto-resolve / retention schedulers.
 - **Gate:** integration groups 14–15 pass; the PDF example produces exactly one email in Mailpit; `docker compose restart redis` → API and worker recover, and pending AI work completes.
 
 ### Phase 8 — Telemetry simulator

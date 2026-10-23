@@ -23,7 +23,7 @@ describe('10. AI enrichment', () => {
     let workers: WorkerHandle;
     beforeAll(async () => {
       ctx = await createTestContext({ AI_SYNC_WAIT_MS: '5000' }, { llmProviders: [] });
-      workers = await startWorkers(ctx.container);
+      workers = await startWorkers(ctx.container, { schedulers: false });
     });
     afterAll(async () => {
       await workers.close();
@@ -49,7 +49,7 @@ describe('10. AI enrichment', () => {
     const provider = new FakeProvider('gemini', groundedReply);
     beforeAll(async () => {
       ctx = await createTestContext({ AI_SYNC_WAIT_MS: '5000' }, { llmProviders: [provider] });
-      workers = await startWorkers(ctx.container);
+      workers = await startWorkers(ctx.container, { schedulers: false });
     });
     afterAll(async () => {
       await workers.close();

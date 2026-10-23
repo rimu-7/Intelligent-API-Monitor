@@ -6,12 +6,13 @@ import { buildContainer } from './container';
 import { installCrashHandlers, onShutdownSignal } from './infrastructure/process';
 
 const env = loadEnv();
-const container = buildContainer({ env, service: 'monitor-api', withAiEvents: true });
+const container = buildContainer({ env, service: 'monitor-api', withAiEvents: true, withRealtime: true });
 const { logger } = container;
 installCrashHandlers(logger);
 logStartupBanner(logger, env, 'monitor-api');
 
 await container.passwords.warmUp();
+await container.sseHub?.start();
 const { app } = createApp(container);
 
 const server = app.listen(env.API_PORT, () => {
