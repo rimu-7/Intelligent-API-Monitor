@@ -45,3 +45,18 @@ The existing module used Better Auth sessions (opaque 7-day tokens, scrypt hashi
 | `DATABASE_POOL_MAX` | removed (pool size fixed in code, 10) |
 | `SEED_ADMIN_USERNAME`, `SEED_ADMIN_NAME` | removed (email is the identity) |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `REDIS_PASSWORD`, `POSTGRES_*`, `LOG_LEVEL`, `PUBLIC_WEB_URL`, `TRUST_PROXY` | unchanged names (values per §5.1) |
+
+## ADR-012 `.env.example`: no inline comments after empty values
+Docker Compose parses `SMTP_HOST=     # blank = …` as the value `# blank = …` (Node's `--env-file` treats it as empty). Copied verbatim, §5.1 would set `SMTP_HOST`, `*_MODEL`, `SAMPLES_DIR` and `METRICS_TOKEN` to comment text inside containers (enabling `/metrics` with a guessable token). **Decision:** those comments move to the line above the variable, in both `.env.example` and the spec's §5.1 block. Comments after non-empty values are parsed correctly by both and are kept.
+
+## ADR-013 `CONFLICT` error code
+§16.2 maps Postgres `23505` to 409 but §11.3 lists no generic 409 code. **Decision:** add `CONFLICT` (409) to the shared `ErrorCode` union; it is also used for "a user with this email already exists".
+
+## ADR-014 Auth details kept or chosen during the port
+- **"Admin" is a permission, not a role name.** Last-admin protection counts active users whose role grants `users:manage` (`rolesWithPermission`). Same behaviour as the original module, no role comparisons in services.
+- **Last-admin locking.** The original check-then-act had a race. Every active admin row is locked `FOR UPDATE` in id order before the target, so two admins demoting each other at the same moment yield exactly one success and one `409 LAST_ADMIN`. Because an admin cannot act on their own account, this race is the only way to reach `LAST_ADMIN`.
+- **Password change starts a fresh session.** All refresh tokens are revoked and `token_version` bumped (A9); the response is a new login payload + cookie so the current client keeps working while every other session ends.
+- **Wrong current password → 400**, not 401, so clients do not mistake it for an expired session and start a refresh loop.
+- **Refresh failures clear the cookie** (except `REFRESH_RACE`, where the cookie already holds the winner's token).
+- **Deactivation instead of deletion**, and ban/unban became `is_active` (ADR-010). Session listing/revocation and profile editing from the original module were dropped: there is no server session table any more and §11.2 does not include them.
+- **Login failure audit** stores the submitted email and a reason (`unknown_email` / `bad_password` / `inactive`) for admins investigating credential stuffing; the HTTP response is identical for all three (A3).

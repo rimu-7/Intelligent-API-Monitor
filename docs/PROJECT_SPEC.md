@@ -326,7 +326,7 @@ intelligent-api-monitor/
 
 ### 5.1 `.env.example` (create verbatim; evaluators run `cp .env.example .env`)
 
-All `dev-only-` values work out of the box locally and are **rejected at startup when `APP_ENV=production`**. Passwords used inside URLs must be URL-safe (letters, digits, `-`, `_`).
+All `dev-only-` values work out of the box locally and are **rejected at startup when `APP_ENV=production`**. Passwords used inside URLs must be URL-safe (letters, digits, `-`, `_`). A variable with an empty value never carries an inline comment: Docker Compose would read `KEY=   # note` as the value `# note` (see `docs/DECISIONS.md` ADR-012).
 
 ```dotenv
 # ─── Environment ────────────────────────────────────────────────────────────
@@ -385,15 +385,19 @@ AI_SYNC_MAX_ALERTS=10            # only wait when the request created/escalated 
 AI_CACHE_TTL_SECONDS=86400
 AI_WORKER_CONCURRENCY=4
 GEMINI_API_KEY=
-GEMINI_MODEL=                    # required if GEMINI_API_KEY is set — use a current fast model ID from Google's docs
+# required if GEMINI_API_KEY is set — use a current fast model ID from Google's docs
+GEMINI_MODEL=
 OPENAI_API_KEY=
-OPENAI_MODEL=                    # required if OPENAI_API_KEY is set
+# required if OPENAI_API_KEY is set
+OPENAI_MODEL=
 MISTRAL_API_KEY=
-MISTRAL_MODEL=                   # required if MISTRAL_API_KEY is set
+# required if MISTRAL_API_KEY is set
+MISTRAL_MODEL=
 
 # ─── Email ──────────────────────────────────────────────────────────────────
 EMAIL_ENABLED=true
-SMTP_HOST=                       # blank = localhost on host, mailpit inside Docker
+# blank = localhost on host, mailpit inside Docker
+SMTP_HOST=
 SMTP_PORT=1025
 SMTP_SECURE=false
 SMTP_USER=
@@ -413,8 +417,10 @@ MONITOR_API_URL=http://localhost:3001      # host mode; compose uses http://moni
 STREAM_MAX_DURATION_MS=600000
 
 # ─── Misc ───────────────────────────────────────────────────────────────────
-SAMPLES_DIR=                     # blank = <repo>/data/samples on host; compose sets /app/data/samples
-METRICS_TOKEN=                   # optional (§16.5); blank disables GET /metrics
+# blank = <repo>/data/samples on host; compose sets /app/data/samples
+SAMPLES_DIR=
+# optional (§16.5); blank disables GET /metrics
+METRICS_TOKEN=
 ```
 
 ### 5.2 Env validation rules (`config/env.ts`, MUST)
@@ -1406,20 +1412,20 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** `docs/AUDIT.md` exists and covers every section of this spec, the existing auth module's inventory, and every A-item (A1–A22).
 
 ### Phase 1 — Foundation
-- [ ] Monorepo layout (§4), `git mv` existing code, root scripts (§4.1), tsconfig base, ESLint, Prettier, `.editorconfig`, `.nvmrc`, `.gitignore`, `.dockerignore`, `.env.example` (§5.1).
-- [ ] `packages/shared` with types/constants (§4).
-- [ ] `monitor-api`: `env.ts` (§5.2), logger, errors, request context, error handler, not-found, `secure-router.ts`, `createApp`, `container.ts`, health routes, `/api/v1/meta`, graceful shutdown.
-- [ ] Dockerfiles (§17), `compose.yaml`, postgres init script.
+- [x] Monorepo layout (§4), `git mv` existing code, root scripts (§4.1), tsconfig base, ESLint, Prettier, `.editorconfig`, `.nvmrc`, `.gitignore`, `.dockerignore`, `.env.example` (§5.1).
+- [x] `packages/shared` with types/constants (§4).
+- [x] `monitor-api`: `env.ts` (§5.2), logger, errors, request context, error handler, not-found, `secure-router.ts`, `createApp`, `container.ts`, health routes, `/api/v1/meta`, graceful shutdown.
+- [x] Dockerfiles (§17), `compose.yaml`, postgres init script.
 - **Gate:** `cp .env.example .env && docker compose up --build -d` → `curl -fsS localhost:3001/health/ready` returns 200; env unit tests prove `"false"` parses to `false` and production guards refuse dev secrets.
 
 ### Phase 2 — Database
-- [ ] Drizzle schema (§10), generated migrations committed, `migrate.ts` with advisory lock and idempotent seed.
+- [x] Drizzle schema (§10), generated migrations committed, `migrate.ts` with advisory lock and idempotent seed.
 - **Gate:** `migrate` container exits 0; running it twice changes nothing; all tables and the partial unique index exist (`\d alerts`); exactly one admin user.
 
 ### Phase 3 — Auth and RBAC (reuse the existing module)
-- [ ] Port the existing auth module per §12.1 into `modules/auth` + `modules/users`; storage in PostgreSQL; env vars renamed to §5.1.
-- [ ] Permission map (§12.2: `ADMIN` = all, `MANAGER` = none), principal resolution (§12.3), `access` declared on every route, tokens (§12.4), login hardening (§12.5), user management (§12.6), audit log.
-- [ ] Fix every failed A-item; record every kept deviation in `docs/DECISIONS.md`.
+- [x] Port the existing auth module per §12.1 into `modules/auth` + `modules/users`; storage in PostgreSQL; env vars renamed to §5.1.
+- [x] Permission map (§12.2: `ADMIN` = all, `MANAGER` = none), principal resolution (§12.3), `access` declared on every route, tokens (§12.4), login hardening (§12.5), user management (§12.6), audit log.
+- [x] Fix every failed A-item; record every kept deviation in `docs/DECISIONS.md`.
 - **Gate:** unit tests + integration group 13 pass; every A-item is ✓ in `docs/AUDIT.md` with evidence; a search for role comparisons (`role ===`, `role ==`, `.role !==`) finds none outside `packages/shared/src/auth.ts`.
 
 ### Phase 4 — Telemetry contract and anomaly engine

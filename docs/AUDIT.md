@@ -55,7 +55,7 @@ Audit of the repository as it existed before this build (baseline commit `99b9b7
 
 ### 3.2 Audit checklist (state of the baseline → state after Phase 3)
 
-"Before" is the baseline evidence. "After" is the evidence in the ported code (`apps/monitor-api/src/...`), filled in during Phase 3.
+"Before" is the baseline evidence. "After" is the evidence in the ported code (paths relative to `apps/monitor-api/src/`), verified in Phase 3 by `test/integration/auth.test.ts` and `test/unit/rbac.test.ts`.
 
 | # | Before | Evidence (baseline) | After | Evidence (ported) |
 |---|---|---|---|---|
@@ -71,15 +71,15 @@ Audit of the repository as it existed before this build (baseline commit `99b9b7
 | A10 | ~ | Central map exists (`src/lib/permissions.ts`), but `actor.role === "admin"` is hard-coded in the service (`src/modules/users/users.service.ts:12`) and nothing forces a route to declare access. | ✓ | `ROLE_PERMISSIONS` in `@apimon/shared`; `secure-router.ts` requires `access` on every route (type error otherwise) + registry checked by contract tests |
 | A11 | ~ | Body schemas are non-strict `z.object` (unknown keys silently stripped) (`src/modules/users/users.schema.ts:22`, `src/modules/auth/auth.schema.ts:4`). | ✓ | `z.strictObject` on every auth/user body — `auth.schemas.ts`, `users.schemas.ts` |
 | A12 | ✓ | `disableSignUp: true`, Better Auth handler not mounted (`src/lib/auth.ts:36`). | ✓ | no registration route exists (integration test asserts 404) |
-| A13 | ✓ | `assertNotSelf`, `assertNotLastAdmin` (`src/modules/users/users.service.ts:20-30`) — kept. Check-then-act race noted. | ✓ | same rules, now inside a transaction with `SELECT … FOR UPDATE` on admins — `modules/users/users.service.ts` / `users.repository.ts` |
-| A14 | ✗ | Cookie SameSite `lax`; no `Origin` check on cookie-authenticated routes. | ✓ | SameSite Strict default + `Origin` allowlist on `/refresh` and `/logout` — `modules/auth/auth.controller.ts` (`assertAllowedOrigin`) |
+| A13 | ✓ | `assertNotSelf`, `assertNotLastAdmin` (`src/modules/users/users.service.ts:20-30`) — kept. Check-then-act race noted. | ✓ | same rules, inside a transaction that locks every active admin `FOR UPDATE` in id order — `modules/users/users.service.ts` (`update`), `users.repository.ts` (`lockActiveUserIdsWithRoles`); concurrent mutual demotion → one 200, one 409 `LAST_ADMIN` (integration test) |
+| A14 | ✗ | Cookie SameSite `lax`; no `Origin` check on cookie-authenticated routes. | ✓ | SameSite Strict default + `Origin` allowlist on `/refresh` and `/logout` — `modules/auth/auth.routes.ts` (`requireAllowedOrigin`) |
 | A15 | ✗ | `origin: TRUSTED_ORIGINS.length > 0 ? TRUSTED_ORIGINS : true` reflects **any** origin with credentials when the list is empty (`src/app.ts:23`). | ✓ | exact allowlist, `*` rejected by env validation — `app.ts`, `config/env.ts` |
 | A16 | ✗ | Hardcoded secret defaults in `docker-compose.yml` (`BETTER_AUTH_SECRET`, seed password) and `src/config/env.ts:40` (default admin password); no `.gitignore` in the repo. | ✓ | no defaults for secrets; `dev-only-` values rejected in production; `.gitignore` covers `.env` |
 | A17 | ~ | Redacts authorization, cookie, set-cookie, `*.password` (`src/lib/logger.ts:6-14`) but not `newPassword`/`currentPassword`, ingest keys or tokens. | ✓ | full §16.1 redaction list — `infrastructure/logger.ts`; no bodies logged |
 | A18 | ✗ | Stack trace and cause returned in the response whenever `NODE_ENV !== 'production'` (`src/middlewares/error-handler.ts:53-58`). | ✓ | generic 500 body, stack only in logs — `http/middleware/error-handler.ts` |
 | A19 | ✗ | No audit log. | ✓ | `audit_logs` table + `audit.service.ts`, all §12.6 events |
 | A20 | n/a | No secret comparisons in module code (delegated to Better Auth). | ✓ | `safeEqual(sha256(a), sha256(b))` — `lib/crypto.ts` |
-| A21 | ✓ | `npm audit --omit=dev`: 4 moderate (esbuild via drizzle-kit, dev tool), 0 high/critical. | ✓ | re-checked in Phase 10 |
+| A21 | ✓ | `npm audit --omit=dev`: 4 moderate (esbuild via drizzle-kit, dev tool), 0 high/critical. | ✓ | re-checked in Phase 10 (see `docs/SECURITY.md`) |
 | A22 | n/a | No password reset feature. | n/a | not implemented (disabled by absence) |
 
 ## 4. Port / rewrite / delete

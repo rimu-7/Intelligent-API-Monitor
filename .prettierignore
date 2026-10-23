@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+web-frontend
+package-lock.json
+apps/monitor-api/drizzle
+docs/PROJECT_SPEC.md

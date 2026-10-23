@@ -1,0 +1,158 @@
+name: apimon
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/monitor-api/Dockerfile
+
+x-api-env: &api-env
+  APP_ENV: ${APP_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DEMO_MODE: ${DEMO_MODE:-false}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  PORT: "3001"
+  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+  JWT_ISSUER: ${JWT_ISSUER:-apimon}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-apimon-client}
+  ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+  REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-strict}
+  SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+  SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+  INGEST_API_KEY: ${INGEST_API_KEY}
+  INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
+  SIMULATOR_URL: http://telemetry-simulator:4400
+  SAMPLES_DIR: /app/data/samples
+  LATENCY_WARNING_MS: ${LATENCY_WARNING_MS:-2000}
+  LATENCY_CRITICAL_MS: ${LATENCY_CRITICAL_MS:-5000}
+  MAX_BATCH_SIZE: ${MAX_BATCH_SIZE:-1000}
+  MAX_BODY_SIZE: ${MAX_BODY_SIZE:-1mb}
+  AI_PROVIDER_ORDER: ${AI_PROVIDER_ORDER:-gemini,openai,mistral}
+  AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-6000}
+  AI_SYNC_WAIT_MS: ${AI_SYNC_WAIT_MS:-5000}
+  AI_SYNC_MAX_ALERTS: ${AI_SYNC_MAX_ALERTS:-10}
+  AI_CACHE_TTL_SECONDS: ${AI_CACHE_TTL_SECONDS:-86400}
+  AI_WORKER_CONCURRENCY: ${AI_WORKER_CONCURRENCY:-4}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-}
+  MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+  MISTRAL_MODEL: ${MISTRAL_MODEL:-}
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+  SMTP_HOST: ${SMTP_HOST:-mailpit}
+  SMTP_PORT: ${SMTP_PORT:-1025}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-API Monitor <alerts@example.com>}
+  ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-oncall@example.com}
+  ALERT_EMAIL_MIN_SEVERITY: ${ALERT_EMAIL_MIN_SEVERITY:-CRITICAL}
+  ALERT_AUTO_RESOLVE_MINUTES: ${ALERT_AUTO_RESOLVE_MINUTES:-30}
+  TELEMETRY_RETENTION_DAYS: ${TELEMETRY_RETENTION_DAYS:-7}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+
+x-node-service: &node-service
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 20s
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction"]
+    volumes: [redisdata:/data]
+    ports: ["127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    restart: unless-stopped
+    ports: ["127.0.0.1:8025:8025", "127.0.0.1:1025:1025"]
+
+  migrate:
+    build: *api-build
+    environment: *api-env
+    command: ["node", "dist/migrate.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  monitor-api:
+    <<: *node-service
+    build: *api-build
+    environment: *api-env
+    command: ["node", "dist/server.js"]
+    volumes: ["./data/samples:/app/data/samples:ro"]
+    ports: ["${MONITOR_API_PORT:-3001}:3001"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  monitor-worker:
+    <<: *node-service
+    build: *api-build
+    environment: *api-env
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  telemetry-simulator:
+    <<: *node-service
+    build:
+      context: .
+      dockerfile: apps/telemetry-simulator/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: "4400"
+      MONITOR_API_URL: http://monitor-api:3001
+      INGEST_API_KEY: ${INGEST_API_KEY}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
+      SIMULATOR_SEED: ${SIMULATOR_SEED:-42}
+      STREAM_MAX_DURATION_MS: ${STREAM_MAX_DURATION_MS:-600000}
+    ports: ["${SIMULATOR_PORT:-4400}:4400"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  pgdata:
+  redisdata:
