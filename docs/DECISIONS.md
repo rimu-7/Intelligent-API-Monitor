@@ -131,3 +131,20 @@ are unaffected (they inject a fake mailer).
 
 **Consequences.** A fresh checkout sends no email until SMTP is configured. `GET /api/v1/settings/notifications`
 reports `smtp.host: null` when unset.
+
+## ADR-020 AI runs automatically only for incidents that send an email
+
+**Context.** Every new or escalated incident triggered an LLM call, including warnings nobody is notified about, which
+spends tokens on text that is rarely read.
+
+**Decision.** `AI_AUTO_ENRICH` (default `email`) decides inside the ingestion transaction, right after notifications are
+created: incidents with a NEW/ESCALATED notification stay `PENDING` and get an AI job (the email waits for that text);
+every other new or escalated incident becomes `ai_status = SKIPPED` with `ai_provider = template`, keeping its
+deterministic text. A new enum value was chosen over reusing `FALLBACK`, which means "AI was tried and failed".
+`POST /alerts/:id/regenerate` is the on-demand path; for a `SKIPPED` alert it uses the original prompt context and may
+reuse a cached answer (identical metrics), while re-analysing existing AI text still bypasses the cache. `all` restores
+the previous behaviour; `none` never calls the LLM automatically, and emails are queued immediately with the template
+text. Skipped alerts are never picked up by the reconciler (it only re-enqueues `PENDING`).
+
+**Consequences.** With email off, `email` mode makes no automatic LLM calls at all. Existing integration suites run with
+`AI_AUTO_ENRICH=all` (they test the AI pipeline itself); `ai-auto-enrich.test.ts` covers `email` and `none`.

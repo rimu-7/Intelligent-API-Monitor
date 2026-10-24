@@ -363,8 +363,8 @@ paths:
   /api/v1/alerts/{id}/regenerate:
     post:
       tags: [Alerts]
-      summary: Re-run AI text generation (bypasses the AI cache)
-      description: Rate limit 10/min per user. The alert returns to `ai_status = PENDING`; watch the stream or poll for the result.
+      summary: Generate or re-run AI text for an alert
+      description: For a `SKIPPED` alert this is the first AI request (same prompt as automatic enrichment; a cached answer for identical metrics may be reused). Otherwise it re-runs the model and bypasses the cache. Rate limit 10/min per user. The alert returns to `ai_status = PENDING`; watch the stream or poll for the result.
       operationId: regenerateAlert
       parameters:
         - $ref: '#/components/parameters/AlertId'
@@ -1019,7 +1019,8 @@ components:
       enum: [ACTIVE, RESOLVED]
     AiStatus:
       type: string
-      enum: [PENDING, COMPLETED, FALLBACK]
+      description: '`SKIPPED`: AI was not run automatically (the incident sent no email, see `AI_AUTO_ENRICH`); the rule-based text stands until someone calls regenerate.'
+      enum: [PENDING, COMPLETED, FALLBACK, SKIPPED]
     Role:
       type: string
       enum: [ADMIN, MANAGER]

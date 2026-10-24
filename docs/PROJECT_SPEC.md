@@ -107,7 +107,7 @@ monitor-api ── enqueue jobs · publish events · cache · rate limits · ide
 1. **PostgreSQL is the source of truth.** Everything in Redis is either rebuildable or disposable.
 2. **Detection is deterministic and pure.** The anomaly engine has no I/O, no clock, no randomness.
 3. **AI enriches, never decides.** The LLM writes the text of an alert; it never decides whether something is an anomaly or its severity.
-4. **One AI call per incident, not per log.** Repeated failures update the open incident; AI runs only for new incidents, severity escalations, and manual regeneration.
+4. **One AI call per incident, not per log, and only where it pays off.** Repeated failures update the open incident; AI runs automatically only for new or escalated incidents that send an email (`AI_AUTO_ENRICH=email`, ADR-020), otherwise on manual regeneration. Skipped incidents keep the template text with `ai_status = SKIPPED`.
 5. **Every async step is idempotent and reconcilable.** If Redis or a worker dies, a reconciler finds stuck work in Postgres and re-enqueues it.
 6. **Secure by default, explicit demo mode.** Anonymous access exists only when `DEMO_MODE=true`, which is refused when `APP_ENV=production`.
 7. **No raw payload storage.** Unknown fields are dropped before persistence or logging (telemetry could carry PHI). Do not claim HIPAA compliance in docs.
@@ -382,6 +382,7 @@ AI_TIMEOUT_MS=6000
 AI_SYNC_WAIT_MS=5000             # POST /monitor waits this long for AI text (0 = never wait)
 AI_SYNC_MAX_ALERTS=10            # only wait when the request created/escalated ≤ this many alerts
 AI_CACHE_TTL_SECONDS=86400
+AI_AUTO_ENRICH=email            # email | all | none
 AI_WORKER_CONCURRENCY=4
 GEMINI_API_KEY=
 # required if GEMINI_API_KEY is set — use a current fast model ID from Google's docs
@@ -814,7 +815,7 @@ Key `ai:alert:<PROMPT_VERSION>:<sha256(api_name|sorted codes|status|latency|reco
 
 ## 10. Database schema (Drizzle, PostgreSQL 17)
 
-Enums: `user_role ('ADMIN','MANAGER')` (names from the existing auth module, upper-cased; record the mapping), `alert_status ('ACTIVE','RESOLVED')`, `alert_severity ('WARNING','CRITICAL')` (order matters), `ai_status ('PENDING','COMPLETED','FALLBACK')`, `resolution_source ('MANUAL','AUTO')`, `notification_status ('PENDING','SENDING','SENT','FAILED')`, `notification_reason ('NEW','ESCALATED')`.
+Enums: `user_role ('ADMIN','MANAGER')` (names from the existing auth module, upper-cased; record the mapping), `alert_status ('ACTIVE','RESOLVED')`, `alert_severity ('WARNING','CRITICAL')` (order matters), `ai_status ('PENDING','COMPLETED','FALLBACK','SKIPPED')`, `resolution_source ('MANUAL','AUTO')`, `notification_status ('PENDING','SENDING','SENT','FAILED')`, `notification_reason ('NEW','ESCALATED')`.
 
 All timestamps `timestamptz` (UTC); all ids `uuid DEFAULT gen_random_uuid()` unless noted.
 
@@ -1253,6 +1254,7 @@ x-api-env: &api-env
   AI_SYNC_WAIT_MS: ${AI_SYNC_WAIT_MS:-5000}
   AI_SYNC_MAX_ALERTS: ${AI_SYNC_MAX_ALERTS:-10}
   AI_CACHE_TTL_SECONDS: ${AI_CACHE_TTL_SECONDS:-86400}
+  AI_AUTO_ENRICH: ${AI_AUTO_ENRICH:-email}
   AI_WORKER_CONCURRENCY: ${AI_WORKER_CONCURRENCY:-4}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   GEMINI_MODEL: ${GEMINI_MODEL:-}

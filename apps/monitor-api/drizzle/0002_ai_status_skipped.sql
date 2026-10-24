@@ -1,0 +1,1 @@
+ALTER TYPE "public"."ai_status" ADD VALUE 'SKIPPED';

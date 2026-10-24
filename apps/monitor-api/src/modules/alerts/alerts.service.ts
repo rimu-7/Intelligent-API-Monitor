@@ -104,14 +104,20 @@ export class AlertsService {
   /** §9.8: PENDING + new enrichment version, bypassing the AI cache. */
   async regenerate(id: string, actor: UserPrincipal, context: AuditContext): Promise<AlertDto> {
     const { repository, queues, audit, events, logger } = this.deps;
+    const before = await repository.findById(id);
+    if (!before) throw new NotFoundError('Alert not found');
+    // First AI request for an incident that skipped automatic AI: same prompt as automatic
+    // enrichment, and a cached answer for identical metrics is fine (and free).
+    // A re-analysis of existing AI text always asks the model again.
+    const firstRequest = before.aiStatus === 'SKIPPED';
     const row = await repository.markForRegeneration(id);
     if (!row) throw new NotFoundError('Alert not found');
     try {
       await queues.enqueueAi({
         alertId: row.id,
         enrichmentVersion: row.enrichmentVersion,
-        context: 'regeneration',
-        skipCache: true,
+        context: firstRequest ? (row.escalatedAt ? 'escalation' : 'new_incident') : 'regeneration',
+        skipCache: !firstRequest,
         ...(context.requestId ? { requestId: context.requestId } : {}),
       });
     } catch (err) {
@@ -122,7 +128,7 @@ export class AlertsService {
       action: 'alert.regenerated',
       actor,
       target: { type: 'alert', id },
-      metadata: { enrichment_version: row.enrichmentVersion },
+      metadata: { enrichment_version: row.enrichmentVersion, first_request: firstRequest },
       context,
     });
     await events.publish('alert.updated', { alert });

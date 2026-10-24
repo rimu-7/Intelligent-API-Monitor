@@ -163,6 +163,8 @@ const envSchema = z
     AI_SYNC_WAIT_MS: int(5000, 0, 30_000),
     AI_SYNC_MAX_ALERTS: int(10, 0, 1000),
     AI_CACHE_TTL_SECONDS: int(86_400, 0, 30 * 86_400),
+    /** When AI runs without a click: only for incidents that send an email (default), always, or never. */
+    AI_AUTO_ENRICH: z.preprocess(blankToUndefined, z.enum(['email', 'all', 'none']).default('email')),
     AI_WORKER_CONCURRENCY: int(4, 1, 64),
     GEMINI_API_KEY: optionalString(),
     GEMINI_MODEL: optionalString(),

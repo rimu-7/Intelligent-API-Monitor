@@ -172,10 +172,12 @@ export const buildContainer = (options: ContainerOptions): Container => {
     );
   }
   const monitoringRepository = new MonitoringRepository(db, logger);
+  const notifications = new NotificationsRepository(db);
   const monitoring = new MonitoringService({
     env,
     repository: monitoringRepository,
     alerts: alertsRepository,
+    notifications,
     thresholds,
     queues,
     events,
@@ -198,7 +200,6 @@ export const buildContainer = (options: ContainerOptions): Container => {
     timeoutMs: env.AI_TIMEOUT_MS,
     logger,
   });
-  const notifications = new NotificationsRepository(db);
   const mailer = options.mailer ?? createMailer(env);
   const settings = new SettingsService({
     repository: new SettingsRepository(db),

@@ -4,7 +4,8 @@ import type { TelemetrySource } from './telemetry';
 export const ALERT_STATUSES = ['ACTIVE', 'RESOLVED'] as const;
 export type AlertStatus = (typeof ALERT_STATUSES)[number];
 
-export const AI_STATUSES = ['PENDING', 'COMPLETED', 'FALLBACK'] as const;
+/** SKIPPED: AI was not requested (no email for this incident); the rule-based text stands until someone asks. */
+export const AI_STATUSES = ['PENDING', 'COMPLETED', 'FALLBACK', 'SKIPPED'] as const;
 export type AiStatus = (typeof AI_STATUSES)[number];
 
 export const LLM_PROVIDER_NAMES = ['gemini', 'openai', 'mistral'] as const;

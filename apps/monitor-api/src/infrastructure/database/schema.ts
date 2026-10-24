@@ -26,7 +26,7 @@ import {
 export const userRole = pgEnum('user_role', ['ADMIN', 'MANAGER']);
 export const alertStatus = pgEnum('alert_status', ['ACTIVE', 'RESOLVED']);
 export const alertSeverity = pgEnum('alert_severity', ['WARNING', 'CRITICAL']);
-export const aiStatus = pgEnum('ai_status', ['PENDING', 'COMPLETED', 'FALLBACK']);
+export const aiStatus = pgEnum('ai_status', ['PENDING', 'COMPLETED', 'FALLBACK', 'SKIPPED']);
 export const resolutionSource = pgEnum('resolution_source', ['MANUAL', 'AUTO']);
 export const notificationStatus = pgEnum('notification_status', ['PENDING', 'SENDING', 'SENT', 'FAILED']);
 export const notificationReason = pgEnum('notification_reason', ['NEW', 'ESCALATED']);

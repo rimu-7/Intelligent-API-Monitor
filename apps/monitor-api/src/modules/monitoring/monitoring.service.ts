@@ -16,6 +16,7 @@ import { UnprocessableError } from '../../lib/errors';
 import { buildTemplateAlert, templateFieldsFromIssues } from '../ai/template-alert';
 import { toAlertDto, toMonitorRunDto } from '../alerts/alerts.mapper';
 import type { AlertsRepository } from '../alerts/alerts.repository';
+import type { NotificationsRepository } from '../notifications/notifications.repository';
 import type { EventBus } from '../realtime/event-bus';
 import type { SimulatorClient } from '../simulator/simulator.client';
 import { evaluate } from './anomaly-engine/evaluate';
@@ -69,6 +70,7 @@ export interface MonitoringServiceDeps {
   env: Env;
   repository: MonitoringRepository;
   alerts: AlertsRepository;
+  notifications: Pick<NotificationsRepository, 'pendingIdsForAlert'>;
   thresholds: ThresholdsService;
   queues: Queues;
   events: EventBus;
@@ -198,6 +200,7 @@ export class MonitoringService {
       telemetry: telemetryRows,
       rejected: normalized.rejected,
       notifications: { enabled: env.EMAIL_ENABLED, minSeverity: env.ALERT_EMAIL_MIN_SEVERITY },
+      aiAuto: env.AI_AUTO_ENRICH,
       startedAt,
     });
 
@@ -221,6 +224,10 @@ export class MonitoringService {
     // 7. After commit: AI jobs and realtime events (failures here never fail the request).
     const pending = persisted.alerts.filter((alert) => alert.aiStatus === 'PENDING');
     const jobIds = await this.enqueueEnrichment(pending, context.requestId);
+    // Emails normally go out after AI finishes; with AI_AUTO_ENRICH=none they go out now, with the rule-based text.
+    if (env.AI_AUTO_ENRICH === 'none') {
+      await this.enqueueEmailsWithoutAi(persisted.alerts.filter((alert) => alert.aiStatus === 'SKIPPED'));
+    }
     let alertDtos = await this.loadAlerts(persisted.alerts.map((alert) => alert.id));
     await this.publishAlertEvents(persisted.alerts, alertDtos);
     const run = await this.publishRun(persisted.runId);
@@ -358,6 +365,19 @@ export class MonitoringService {
       }),
     );
     return jobIds;
+  }
+
+  /** If Redis is down the reconciler re-sends stale PENDING notifications. */
+  private async enqueueEmailsWithoutAi(skipped: UpsertedAlert[]): Promise<void> {
+    for (const alert of skipped) {
+      try {
+        for (const notificationId of await this.deps.notifications.pendingIdsForAlert(alert.id)) {
+          await this.deps.queues.enqueueEmail({ notificationId });
+        }
+      } catch (err) {
+        this.deps.logger.error({ err, alert_id: alert.id }, 'failed to enqueue email; reconciler will retry');
+      }
+    }
   }
 
   private async publishAlertEvents(upserted: UpsertedAlert[], dtos: AlertDto[]): Promise<void> {

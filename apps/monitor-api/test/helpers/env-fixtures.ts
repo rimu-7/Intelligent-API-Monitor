@@ -18,6 +18,9 @@ export const BASE_ENV: EnvInput = {
   // Email on, against a test double mailer (tests inject FakeMailer).
   EMAIL_ENABLED: 'true',
   SMTP_HOST: 'localhost',
+  // Most suites test the AI pipeline itself, so AI runs for every incident; the default
+  // (email) and manual modes are covered in ai-auto-enrich.test.ts.
+  AI_AUTO_ENRICH: 'all',
 };
 
 export const makeEnv = (overrides: EnvInput = {}): Env => parseEnv({ ...BASE_ENV, ...overrides });

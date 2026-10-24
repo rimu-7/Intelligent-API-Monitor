@@ -5,10 +5,11 @@ import {
   type Severity,
   type TelemetrySource,
 } from '@apimon/shared';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database, DbExecutor } from '../../infrastructure/database/client';
 import {
   alertNotifications,
+  alerts,
   monitoredApis,
   monitorRuns,
   rejectedTelemetry,
@@ -74,6 +75,8 @@ export interface PersistRunInput {
   telemetry: TelemetryLogInsert[];
   rejected: RejectedItem[];
   notifications: { enabled: boolean; minSeverity: Severity };
+  /** Which PENDING incidents get an automatic AI job; the rest become SKIPPED (manual only). */
+  aiAuto: 'email' | 'all' | 'none';
   startedAt: number;
 }
 
@@ -82,7 +85,7 @@ export interface UpsertedAlert {
   fingerprint: string;
   severity: Severity;
   previousSeverity: Severity | null;
-  aiStatus: 'PENDING' | 'COMPLETED' | 'FALLBACK';
+  aiStatus: 'PENDING' | 'COMPLETED' | 'FALLBACK' | 'SKIPPED';
   enrichmentVersion: number;
   inserted: boolean;
   escalated: boolean;
@@ -95,7 +98,7 @@ export interface PersistRunResult {
 
 const isSeverity = (value: unknown): value is Severity => value === 'WARNING' || value === 'CRITICAL';
 const isAiStatus = (value: unknown): value is UpsertedAlert['aiStatus'] =>
-  value === 'PENDING' || value === 'COMPLETED' || value === 'FALLBACK';
+  value === 'PENDING' || value === 'COMPLETED' || value === 'FALLBACK' || value === 'SKIPPED';
 
 /** Codes are enum values, so a literal `{A,B}` array is safe and avoids driver array quirks. */
 const textArray = (codes: readonly AnomalyCode[]) => `{${codes.filter(isAnomalyCode).join(',')}}`;
@@ -165,6 +168,7 @@ export class MonitoringRepository {
     }
 
     // 6. Notifications for new and escalated incidents at or above the email threshold.
+    const emailed = new Set<string>();
     if (input.notifications.enabled) {
       const minRank = severityRank(input.notifications.minSeverity);
       const due = upserted
@@ -174,6 +178,30 @@ export class MonitoringRepository {
           reason: alert.inserted ? ('NEW' as const) : ('ESCALATED' as const),
         }));
       if (due.length > 0) await tx.insert(alertNotifications).values(due).onConflictDoNothing();
+      for (const n of due) emailed.add(n.alertId);
+    }
+
+    // 6b. Token saving: AI runs automatically only where it pays off (an email goes out), unless
+    // AI_AUTO_ENRICH=all. The rest keep their rule-based text as SKIPPED until someone asks for AI.
+    const skip = upserted.filter(
+      (alert) =>
+        alert.aiStatus === 'PENDING' &&
+        (input.aiAuto === 'none' || (input.aiAuto === 'email' && !emailed.has(alert.id))),
+    );
+    if (skip.length > 0) {
+      await tx
+        .update(alerts)
+        .set({ aiStatus: 'SKIPPED', aiProvider: 'template', aiModel: null, aiGeneratedAt: new Date() })
+        .where(
+          and(
+            inArray(
+              alerts.id,
+              skip.map((alert) => alert.id),
+            ),
+            eq(alerts.aiStatus, 'PENDING'),
+          ),
+        );
+      for (const alert of skip) alert.aiStatus = 'SKIPPED';
     }
 
     // 7. Final counts and duration.

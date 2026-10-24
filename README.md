@@ -15,8 +15,9 @@ The UI is a separate **Next.js** app built later; this repository delivers its A
   per-API latency thresholds, CRITICAL/WARNING severity.
 - **Incident deduplication**: a repeating failure updates one alert (`occurrence_count`) instead of creating hundreds;
   WARNING → CRITICAL escalates in place.
-- **One AI call per incident** (not per log), queued with BullMQ, cached, behind circuit breakers; the template is
-  always a valid fallback, so alerts never wait on an LLM.
+- **AI only where it pays off**: by default the LLM runs only for incidents that send an email (one call per
+  incident, not per log); every other incident keeps rule-based text and gets AI with one click. Queued with BullMQ,
+  cached, behind circuit breakers; the template is always a valid fallback, so alerts never wait on an LLM.
 - Realtime SSE stream with single-use tickets; email via any SMTP server (opt-in), at most two emails per incident.
 - Role-based auth (reused & hardened from the original module): JWT access tokens + rotated refresh cookies with reuse
   detection, argon2id, brute-force throttling, audit log.
@@ -181,8 +182,11 @@ An incident is identified by `sha256(api_name | sorted codes)`, so a different s
 - **Output guard**: JSON only, exact keys and lengths, must contain the exact `api_name`, and every number in the
   message must appear in the input (or be a latency in seconds). Anything else → next provider.
 - **Fallback**: deterministic template, also used as the initial text, so alerts are useful immediately.
-- **Cost control**: one call per incident (new, escalated, or manual regenerate), cache keyed by exact metrics
-  (24 h), circuit breaker per provider (3 failures → open 60 s), simulator stream auto-stops.
+- **Cost control**: `AI_AUTO_ENRICH=email` (default) calls the LLM only for new or escalated incidents that send an
+  email; the rest are `ai_status: SKIPPED` with rule-based text until an admin clicks **Generate AI analysis**
+  (`POST /api/v1/alerts/:id/regenerate`). `all` enriches every incident, `none` only on request (emails then carry the
+  rule-based text). On top: one call per incident, cache keyed by exact metrics (24 h), circuit breaker per provider
+  (3 failures → open 60 s), simulator stream auto-stops.
 
 ## Configuration
 
