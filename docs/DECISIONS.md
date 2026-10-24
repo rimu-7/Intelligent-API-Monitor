@@ -148,3 +148,17 @@ text. Skipped alerts are never picked up by the reconciler (it only re-enqueues 
 
 **Consequences.** With email off, `email` mode makes no automatic LLM calls at all. Existing integration suites run with
 `AI_AUTO_ENRICH=all` (they test the AI pipeline itself); `ai-auto-enrich.test.ts` covers `email` and `none`.
+
+## ADR-021 Incidents are resolved by people, not by a timer
+
+**Context.** `ALERT_AUTO_RESOLVE_MINUTES` defaulted to 30, so every incident without a recurrence for 30 minutes was
+closed by the worker (`resolution_source = AUTO`). Operators returned to a dashboard where hundreds of incidents had
+been resolved that nobody had looked at.
+
+**Decision.** The default is now `0`: only an authenticated user with `alerts:resolve` resolves an incident
+(`PATCH /api/v1/alerts/:id/resolve`, audited). The auto-resolve job is registered only when the setting is above 0; when
+it is 0 the worker also removes the job scheduler from Redis, so a scheduler left by an earlier run stops firing.
+Setting a positive value restores the old behaviour for teams that want it.
+
+**Consequences.** Active incidents accumulate until someone resolves them; a repeat of a resolved incident still opens
+a new one (partial unique index on ACTIVE). Alerts already auto-resolved stay resolved.

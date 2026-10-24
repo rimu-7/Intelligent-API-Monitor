@@ -1,15 +1,22 @@
 import { Mistral } from '@mistralai/mistralai';
 import { EmptyCompletionError, GENERATION, type CompletionInput, type LlmProvider } from './llm-provider';
 
+const normalizeMistralModel = (rawModel: string): string => {
+  const m = rawModel.trim().replace(/^["']|["']$/g, '');
+  if (m === 'mistral-8b' || m === 'mistral-8b-latest') return 'ministral-8b-latest';
+  if (m === 'mistral-3b' || m === 'mistral-3b-latest') return 'ministral-3b-latest';
+  return m;
+};
+
 export class MistralProvider implements LlmProvider {
   readonly name = 'mistral' as const;
   private readonly client: Mistral | undefined;
+  readonly model: string;
 
-  constructor(
-    apiKey: string | undefined,
-    readonly model: string,
-  ) {
-    this.client = apiKey ? new Mistral({ apiKey, retryConfig: { strategy: 'none' } }) : undefined;
+  constructor(apiKey: string | undefined, model: string) {
+    const cleanKey = apiKey ? apiKey.trim().replace(/^["']|["']$/g, '') : undefined;
+    this.model = normalizeMistralModel(model);
+    this.client = cleanKey ? new Mistral({ apiKey: cleanKey, retryConfig: { strategy: 'none' } }) : undefined;
   }
 
   isConfigured(): boolean {

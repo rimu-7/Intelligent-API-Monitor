@@ -406,7 +406,7 @@ ALERT_EMAIL_TO=oncall@example.com
 ALERT_EMAIL_MIN_SEVERITY=CRITICAL
 
 # ─── Background jobs ────────────────────────────────────────────────────────
-ALERT_AUTO_RESOLVE_MINUTES=30    # 0 disables
+ALERT_AUTO_RESOLVE_MINUTES=0     # 0 (default) = only users resolve; N = resolve after N quiet minutes
 TELEMETRY_RETENTION_DAYS=7
 
 # ─── Simulator ──────────────────────────────────────────────────────────────
@@ -1052,14 +1052,14 @@ export const ROLE_PERMISSIONS = {
 |---|---|---|
 | `ai-enrichment` | enrich one alert | `AI_WORKER_CONCURRENCY`; limiter max 10 jobs/s |
 | `email` | send one notification | 2 |
-| `maintenance` | `reconcile` (every 30 s), `auto-resolve` (every 60 s), `retention` (hourly) via Job Schedulers | 1 |
+| `maintenance` | `reconcile` (every 30 s), `auto-resolve` (every 60 s, only when enabled; removed from Redis otherwise), `retention` (hourly) via Job Schedulers | 1 |
 
 Completed jobs removed after 1 h / 1000 jobs; failed kept 7 days.
 
 ### 13.4 Scheduled jobs
 
 - **reconcile**: alerts with `ai_status='PENDING'` and `updated_at < now() - 30s` → re-enqueue (same jobId, so duplicates are ignored). Notifications `PENDING` older than 2 min whose alert is no longer `PENDING` (or older than 5 min regardless) → enqueue email.
-- **auto-resolve** (if `ALERT_AUTO_RESOLVE_MINUTES > 0`): `ACTIVE` alerts with `last_seen_at < now() - N min` → `RESOLVED`, `resolution_source='AUTO'`, note `Auto-resolved: no recurrence for N minutes`; publish `alert.resolved`.
+- **auto-resolve** (opt-in, ADR-021; if `ALERT_AUTO_RESOLVE_MINUTES > 0`): `ACTIVE` alerts with `last_seen_at < now() - N min` → `RESOLVED`, `resolution_source='AUTO'`, note `Auto-resolved: no recurrence for N minutes`; publish `alert.resolved`.
 - **retention**: delete `telemetry_logs` and `rejected_telemetry` older than `TELEMETRY_RETENTION_DAYS` in batches of 5000; delete `monitor_runs` older than that with no remaining logs.
 
 ---
@@ -1271,7 +1271,7 @@ x-api-env: &api-env
   EMAIL_FROM: ${EMAIL_FROM:-API Monitor <alerts@example.com>}
   ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-oncall@example.com}
   ALERT_EMAIL_MIN_SEVERITY: ${ALERT_EMAIL_MIN_SEVERITY:-CRITICAL}
-  ALERT_AUTO_RESOLVE_MINUTES: ${ALERT_AUTO_RESOLVE_MINUTES:-30}
+  ALERT_AUTO_RESOLVE_MINUTES: ${ALERT_AUTO_RESOLVE_MINUTES:-0}
   TELEMETRY_RETENTION_DAYS: ${TELEMETRY_RETENTION_DAYS:-7}
   METRICS_TOKEN: ${METRICS_TOKEN:-}
 

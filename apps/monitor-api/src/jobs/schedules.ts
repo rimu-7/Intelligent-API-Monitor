@@ -22,16 +22,23 @@ export interface StartWorkersOptions {
 /** Recurring maintenance (§13.3–13.4), via Job Schedulers (the repeatable-jobs API is deprecated). */
 export const registerSchedulers = async (container: Container): Promise<void> => {
   const { maintenance } = container.queues;
+  const { env, logger } = container;
   await maintenance.upsertJobScheduler(
     MAINTENANCE_JOBS.reconcile,
     { every: 30_000 },
     { name: MAINTENANCE_JOBS.reconcile },
   );
-  await maintenance.upsertJobScheduler(
-    MAINTENANCE_JOBS.autoResolve,
-    { every: 60_000 },
-    { name: MAINTENANCE_JOBS.autoResolve },
-  );
+  // Auto-resolve is opt-in. When off, also remove a scheduler left in Redis by an earlier run,
+  // otherwise it would keep firing after the setting changed.
+  if (env.ALERT_AUTO_RESOLVE_MINUTES > 0) {
+    await maintenance.upsertJobScheduler(
+      MAINTENANCE_JOBS.autoResolve,
+      { every: 60_000 },
+      { name: MAINTENANCE_JOBS.autoResolve },
+    );
+  } else if (await maintenance.removeJobScheduler(MAINTENANCE_JOBS.autoResolve)) {
+    logger.info({ job: MAINTENANCE_JOBS.autoResolve }, 'auto-resolve disabled; scheduler removed');
+  }
   await maintenance.upsertJobScheduler(
     MAINTENANCE_JOBS.retention,
     { every: 3_600_000 },

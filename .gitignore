@@ -1,6 +1,3 @@
-# Separate repository — managed on its own, not part of this backend build
-web-frontend/
-
 node_modules/
 dist/
 coverage/

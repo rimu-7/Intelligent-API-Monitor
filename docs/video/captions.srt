@@ -1,0 +1,111 @@
+1
+00:00:00,200 --> 00:00:01,807
+APIs rarely crash loudly.
+
+2
+00:00:01,857 --> 00:00:05,536
+They slow down, return empty data, or quietly fail.
+
+3
+00:00:05,586 --> 00:00:11,750
+API Monitor catches every one of those moments, and tells you why, in real time.
+
+4
+00:00:12,200 --> 00:00:19,443
+Every service streams its telemetry — status code, latency and records returned — into one endpoint.
+
+5
+00:00:19,493 --> 00:00:27,648
+Eight deterministic rules check each sample: server errors, auth failures, high latency, empty or missing data, and more.
+
+6
+00:00:27,698 --> 00:00:29,471
+No AI guessing here.
+
+7
+00:00:29,521 --> 00:00:31,750
+Detection is plain, testable code.
+
+8
+00:00:32,200 --> 00:00:34,406
+And it never spams you.
+
+9
+00:00:34,456 --> 00:00:45,688
+Repeated failures are grouped by a fingerprint of the API and its symptoms, so a thousand bad responses become one incident with an occurrence count.
+
+10
+00:00:45,738 --> 00:00:49,750
+If a warning turns critical, it escalates in place.
+
+11
+00:00:50,200 --> 00:00:57,341
+Open an incident and you get a plain-English summary, a probable cause and a recommended fix, written by AI.
+
+12
+00:00:57,391 --> 00:01:00,747
+But the AI only explains — it never decides.
+
+13
+00:01:00,797 --> 00:01:06,424
+Its answer must be valid JSON, name the right API, and use only real numbers.
+
+14
+00:01:06,474 --> 00:01:14,750
+If a provider fails, it switches from Gemini to OpenAI to Mistral, and if all are down, a built-in template takes over.
+
+15
+00:01:15,200 --> 00:01:23,805
+AI costs money, so it only runs where it pays off: automatically for incidents that send an email.
+
+16
+00:01:23,855 --> 00:01:32,461
+Everything else gets free, rule-based guidance — plus one click on Generate AI analysis when you want more.
+
+17
+00:01:32,511 --> 00:01:33,903
+Same incident twice?
+
+18
+00:01:33,953 --> 00:01:37,750
+The cached answer is reused, at zero cost.
+
+19
+00:01:38,200 --> 00:01:39,615
+Everything is live.
+
+20
+00:01:39,665 --> 00:01:46,938
+The dashboard updates over server-sent events the moment an incident changes — no refresh button.
+
+21
+00:01:46,988 --> 00:01:54,750
+And a built-in simulator replays twelve real failure scenarios, so you can break things on purpose.
+
+22
+00:01:55,200 --> 00:02:03,221
+Critical incidents go straight to your inbox through any SMTP provider — here, Gmail.
+
+23
+00:02:03,271 --> 00:02:14,750
+Choose recipients in Settings, with no restart, and send a test email that reports exactly what the mail server answered.
+
+24
+00:02:15,200 --> 00:02:22,500
+Services shows each API's traffic, error rate and latency against its thresholds.
+
+25
+00:02:22,550 --> 00:02:34,750
+And every sign-in, role change and resolution lands in the audit log, behind role-based access, rotating tokens and Argon2-hashed passwords.
+
+26
+00:02:35,200 --> 00:02:47,750
+It works on every screen — tables on desktop, cards on your phone — and every endpoint is documented in OpenAPI with a live Swagger UI.
+
+27
+00:02:48,200 --> 00:02:58,461
+Postgres, Redis, the API, the worker, the simulator and the dashboard — all start with one command, backed by over three hundred automated tests.
+
+28
+00:02:58,511 --> 00:02:59,750
+That's API Monitor.

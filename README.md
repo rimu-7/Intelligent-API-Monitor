@@ -21,7 +21,7 @@ The UI is a separate **Next.js** app built later; this repository delivers its A
 - Realtime SSE stream with single-use tickets; email via any SMTP server (opt-in), at most two emails per incident.
 - Role-based auth (reused & hardened from the original module): JWT access tokens + rotated refresh cookies with reuse
   detection, argon2id, brute-force throttling, audit log.
-- Telemetry simulator with 12 scenarios and a continuous stream; reconciler, auto-resolve and retention jobs.
+- Telemetry simulator with 12 scenarios and a continuous stream; reconciler and retention jobs; incidents are resolved only by a signed-in user (optional auto-resolve via `ALERT_AUTO_RESOLVE_MINUTES`, off by default).
 - OpenAPI 3.1 contract + Swagger UI, `api.http`, contract tests that keep routes and docs in sync.
 
 ## Architecture

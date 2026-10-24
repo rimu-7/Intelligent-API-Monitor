@@ -1,0 +1,31 @@
+API Monitor — voice-over (≈3:00). Read calmly; leave a short pause between scenes.
+
+[Scene 1 · Hook · 0:00]
+APIs rarely crash loudly. They slow down, return empty data, or quietly fail. API Monitor catches every one of those moments, and tells you why, in real time.
+
+[Scene 2 · Detection · 0:12]
+Every service streams its telemetry — status code, latency and records returned — into one endpoint. Eight deterministic rules check each sample: server errors, auth failures, high latency, empty or missing data, and more. No AI guessing here. Detection is plain, testable code.
+
+[Scene 3 · No alert spam · 0:32]
+And it never spams you. Repeated failures are grouped by a fingerprint of the API and its symptoms, so a thousand bad responses become one incident with an occurrence count. If a warning turns critical, it escalates in place.
+
+[Scene 4 · The AI explains, never decides · 0:50]
+Open an incident and you get a plain-English summary, a probable cause and a recommended fix, written by AI. But the AI only explains — it never decides. Its answer must be valid JSON, name the right API, and use only real numbers. If a provider fails, it switches from Gemini to OpenAI to Mistral, and if all are down, a built-in template takes over.
+
+[Scene 5 · Save tokens, save money · 1:15]
+AI costs money, so it only runs where it pays off: automatically for incidents that send an email. Everything else gets free, rule-based guidance — plus one click on Generate AI analysis when you want more. Same incident twice? The cached answer is reused, at zero cost.
+
+[Scene 6 · Live, with a built-in simulator · 1:38]
+Everything is live. The dashboard updates over server-sent events the moment an incident changes — no refresh button. And a built-in simulator replays twelve real failure scenarios, so you can break things on purpose.
+
+[Scene 7 · Straight to your inbox · 1:55]
+Critical incidents go straight to your inbox through any SMTP provider — here, Gmail. Choose recipients in Settings, with no restart, and send a test email that reports exactly what the mail server answered.
+
+[Scene 8 · Built to be trusted · 2:15]
+Services shows each API's traffic, error rate and latency against its thresholds. And every sign-in, role change and resolution lands in the audit log, behind role-based access, rotating tokens and Argon2-hashed passwords.
+
+[Scene 9 · Every screen, fully documented · 2:35]
+It works on every screen — tables on desktop, cards on your phone — and every endpoint is documented in OpenAPI with a live Swagger UI.
+
+[Scene 10 · One command · 2:48]
+Postgres, Redis, the API, the worker, the simulator and the dashboard — all start with one command, backed by over three hundred automated tests. That's API Monitor.

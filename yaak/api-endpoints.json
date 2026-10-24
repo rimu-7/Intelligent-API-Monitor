@@ -1,0 +1,576 @@
+{
+  "info": {
+    "name": "Intelligent API Monitor",
+    "description": "Comprehensive API collection for the Intelligent API Monitoring & Incident Triage Platform. Authenticate with Login (admin or manager) to obtain a Bearer token or cookie session.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001/api/v1"
+    },
+    {
+      "key": "rootUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "alertId",
+      "value": ""
+    },
+    {
+      "key": "apiId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Server Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{rootUrl}}/health",
+              "host": ["{{rootUrl}}"],
+              "path": ["health"]
+            },
+            "description": "System readiness, database, redis, and worker connectivity health check."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Admin@123456!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Authenticates as Admin (full access: alerts, users, apis, simulator, audit). Returns access_token and sets refresh cookie."
+          }
+        },
+        {
+          "name": "Login (Manager)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"manager@example.com\",\n  \"password\": \"Manager@123456!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Authenticates as Manager (can resolve alerts, configure APIs, and run simulator)."
+          }
+        },
+        {
+          "name": "Login (Viewer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"viewer@example.com\",\n  \"password\": \"Viewer@123456!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Authenticates as Viewer (read-only access to alerts and APIs)."
+          }
+        },
+        {
+          "name": "Current User (Me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Returns authenticated user identity and resolved RBAC permissions."
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Exchanges httpOnly refresh cookie for a fresh access_token."
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Admin@123456!\",\n  \"newPassword\": \"Admin@123456!Updated\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "change-password"]
+            },
+            "description": "Rotates user password, bumps token version, and revokes all active refresh tokens."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Clears session cookie and invalidates token."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Alerts",
+      "item": [
+        {
+          "name": "List Incident Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/alerts?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "status",
+                  "value": "FIRING",
+                  "disabled": true
+                },
+                {
+                  "key": "severity",
+                  "value": "CRITICAL",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Fetches incident alerts with AI summaries, error rates, and triage recommendations."
+          }
+        },
+        {
+          "name": "Get Alert Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/alerts/{{alertId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts", "{{alertId}}"]
+            },
+            "description": "Fetches detailed incident info, root-cause evidence, and timeline."
+          }
+        },
+        {
+          "name": "Resolve Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNotes\": \"Database pool connection exhaustion mitigated by scaling connection limits.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/alerts/{{alertId}}/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts", "{{alertId}}", "resolve"]
+            },
+            "description": "Marks an alert as resolved with mitigation audit notes."
+          }
+        },
+        {
+          "name": "Regenerate AI Analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/alerts/{{alertId}}/regenerate-ai",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts", "{{alertId}}", "regenerate-ai"]
+            },
+            "description": "Re-queues AI root-cause analysis job with fresh telemetry window."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Monitored APIs",
+      "item": [
+        {
+          "name": "List APIs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/apis",
+              "host": ["{{baseUrl}}"],
+              "path": ["apis"]
+            },
+            "description": "Retrieves registered services, environments, SLA thresholds, and health status."
+          }
+        },
+        {
+          "name": "Register Monitored API",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Checkout Service\",\n  \"slug\": \"checkout-svc\",\n  \"baseUrl\": \"https://checkout.internal.service\",\n  \"environment\": \"production\",\n  \"slaErrorRate\": 0.02,\n  \"slaP95Ms\": 400\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/apis",
+              "host": ["{{baseUrl}}"],
+              "path": ["apis"]
+            },
+            "description": "Registers a new API endpoint for telemetry ingestion and SLA monitoring."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Telemetry Simulator",
+      "item": [
+        {
+          "name": "Run Scenario (Outage Burst)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"outage-burst\",\n  \"count\": 50,\n  \"ratePerSec\": 25\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/simulator/scenarios/run",
+              "host": ["{{baseUrl}}"],
+              "path": ["simulator", "scenarios", "run"]
+            },
+            "description": "Triggers simulated high-error outage telemetry burst to test AI incident detection."
+          }
+        },
+        {
+          "name": "Run Scenario (Escalation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"escalation\",\n  \"count\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/simulator/scenarios/run",
+              "host": ["{{baseUrl}}"],
+              "path": ["simulator", "scenarios", "run"]
+            },
+            "description": "Simulates gradual latency degradation and cascading 503 service unavailabilities."
+          }
+        },
+        {
+          "name": "Run Scenario (PDF Spec Example)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"pdf-example\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/simulator/scenarios/run",
+              "host": ["{{baseUrl}}"],
+              "path": ["simulator", "scenarios", "run"]
+            },
+            "description": "Runs canonical demo batch from project specification."
+          }
+        },
+        {
+          "name": "Get Stream Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/simulator/stream/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["simulator", "stream", "status"]
+            },
+            "description": "Checks continuous background traffic generator status."
+          }
+        },
+        {
+          "name": "Start Continuous Stream",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ratePerSec\": 10,\n  \"errorRatio\": 0.05\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/simulator/stream/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["simulator", "stream", "start"]
+            },
+            "description": "Activates continuous real-time telemetry streaming."
+          }
+        },
+        {
+          "name": "Stop Continuous Stream",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/simulator/stream/stop",
+              "host": ["{{baseUrl}}"],
+              "path": ["simulator", "stream", "stop"]
+            },
+            "description": "Stops continuous telemetry generator."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit Logs",
+      "item": [
+        {
+          "name": "List Audit Trail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit-logs?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit-logs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Displays tamper-evident security audit trail (logins, password updates, triage actions)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Management (RBAC)",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            },
+            "description": "Lists all user accounts, roles, and status (Admin only)."
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"engineer@example.com\",\n  \"password\": \"SecurePass@2026!\",\n  \"role\": \"MANAGER\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            },
+            "description": "Provisions new team member account with role assignment."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -184,7 +184,8 @@ const envSchema = z
     ALERT_EMAIL_TO: z.preprocess(blankToUndefined, z.string().min(3).default('oncall@example.com')),
     ALERT_EMAIL_MIN_SEVERITY: z.preprocess(blankToUndefined, z.enum(SEVERITIES).default('CRITICAL')),
 
-    ALERT_AUTO_RESOLVE_MINUTES: int(30, 0, 10_080),
+    /** 0 (default) = only a signed-in user with alerts:resolve can resolve an incident. */
+    ALERT_AUTO_RESOLVE_MINUTES: int(0, 0, 10_080),
     TELEMETRY_RETENTION_DAYS: int(7, 1, 3650),
 
     SIMULATOR_URL: z.preprocess(blankToUndefined, z.url().default('http://localhost:4400')),
