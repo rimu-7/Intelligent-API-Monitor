@@ -226,6 +226,12 @@ export function EmailSettingsCard() {
               Send test
             </Button>
           </div>
+          {settings && !settings.email_enabled && (
+            <p className="text-[11px] text-muted-foreground">
+              Email is off. Set EMAIL_ENABLED=true and the SMTP_* values in the server&apos;s .env, then restart the
+              API and worker.
+            </p>
+          )}
           {outcome && (
             <div
               role="status"
@@ -246,10 +252,7 @@ export function EmailSettingsCard() {
                   <>
                     <div className="font-medium">Accepted by the mail server in {outcome.result.duration_ms} ms</div>
                     <div className="mt-0.5 break-words opacity-80">
-                      Sent to {outcome.result.to.join(", ")}.{" "}
-                      {settings?.smtp.host === "mailpit" || settings?.smtp.host === "localhost"
-                        ? "Local dev: open Mailpit at http://localhost:8025 to read it."
-                        : "Check that inbox (and its spam folder)."}
+                      Sent to {outcome.result.to.join(", ")}. Check that inbox, and its spam folder the first time.
                     </div>
                   </>
                 ) : (
@@ -272,7 +275,7 @@ export function EmailSettingsCard() {
               <span className="float-right hidden text-muted-foreground group-open:inline">Hide</span>
             </summary>
             <dl className="grid grid-cols-1 gap-x-4 gap-y-2 border-t px-3 py-3 text-[11px] sm:grid-cols-2">
-              <Row label="SMTP server" value={`${settings.smtp.host}:${settings.smtp.port}`} />
+              <Row label="SMTP server" value={settings.smtp.host ? `${settings.smtp.host}:${settings.smtp.port}` : "Not configured"} />
               <Row label="Encryption" value={settings.smtp.secure ? "TLS (SMTPS)" : "None / STARTTLS"} />
               <Row label="Login" value={settings.smtp.auth_configured ? "Username and password set" : "No login"} />
               <Row label="From" value={settings.from} />

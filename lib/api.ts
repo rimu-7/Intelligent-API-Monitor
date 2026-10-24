@@ -107,7 +107,7 @@ export interface NotificationSettings {
   email_enabled: boolean
   min_severity: Severity
   from: string
-  smtp: { host: string; port: number; secure: boolean; auth_configured: boolean }
+  smtp: { host: string | null; port: number; secure: boolean; auth_configured: boolean }
   updated_at: string | null
 }
 
