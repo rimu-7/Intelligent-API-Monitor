@@ -22,7 +22,7 @@ export function SimulatorView() {
       <section className="space-y-4">
         <SectionHeader
           title="Continuous stream"
-          description="Sends a steady flow of realistic telemetry, healthy and anomalous, so incidents open, escalate and auto-resolve on their own."
+          description="Sends a steady flow of realistic telemetry, healthy and anomalous, so incidents open and escalate on their own."
         />
         <div className="rounded-xl border bg-card p-4 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

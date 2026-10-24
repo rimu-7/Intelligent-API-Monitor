@@ -151,7 +151,7 @@ export function AlertsView() {
             title={status === "ACTIVE" && !filtered ? "No active incidents" : "Nothing matches these filters"}
             description={
               status === "ACTIVE" && !filtered
-                ? "Every monitored API is within its thresholds. Alerts close on their own after a quiet period."
+                ? "Every monitored API is within its thresholds."
                 : "Try another status, severity or service."
             }
           >
@@ -235,7 +235,7 @@ function StatCards() {
         icon={CheckCircle2Icon}
         label="Resolved"
         value={summary.resolved}
-        hint="Manually or after a quiet period"
+        hint="Closed by your team"
         tone="text-emerald-500"
       />
       <Stat
