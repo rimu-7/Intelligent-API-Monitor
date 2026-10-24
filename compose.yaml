@@ -149,6 +149,21 @@ services:
       timeout: 5s
       retries: 6
 
+  # Production build (minified, prerendered). For hot reload run `pnpm dev` in web-frontend/ instead.
+  frontend:
+    build:
+      context: ./web-frontend
+      target: runner
+      args:
+        INTERNAL_API_URL: http://monitor-api:3001
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      monitor-api:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redisdata:

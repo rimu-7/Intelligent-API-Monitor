@@ -73,9 +73,15 @@ docker compose ps        # every service healthy within ~1–3 minutes
 
 | What       | URL                        |
 | ---------- | -------------------------- |
+| Dashboard  | http://localhost:3000      |
 | API        | http://localhost:3001      |
 | Swagger UI | http://localhost:3001/docs |
 | Simulator  | http://localhost:4400      |
+
+The dashboard container is a **production build** (Next.js standalone, minified, prerendered), so reloads are instant.
+For hot reload while editing the UI, run it on the host instead: `docker compose stop frontend`, then
+`cd web-frontend && pnpm install && pnpm dev`. If the browser reaches the API at another address than
+`http://localhost:3001`, set `PUBLIC_API_URL` and rebuild the frontend (`docker compose up -d --build frontend`).
 
 Admin login (local only, from `.env.example`): `admin@example.com` / `dev-only-Admin-2026`.
 `DEMO_MODE=true` in `.env.example` lets anonymous callers ingest and read alerts; production refuses to start with it.
