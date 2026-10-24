@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect } from "react"
-import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/components/auth-context"
 import { DashboardProvider, useDashboard, type Section } from "@/components/dashboard/dashboard-context"
 import { DashboardShell, useVisibleNav } from "@/components/dashboard/dashboard-shell"
@@ -11,6 +10,7 @@ import { ServicesView } from "@/components/dashboard/services/services-view"
 import { SettingsView } from "@/components/dashboard/settings/settings-view"
 import { SimulatorView } from "@/components/dashboard/simulator/simulator-view"
 import { UsersView } from "@/components/dashboard/users/users-view"
+import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 
 const VIEWS: Record<Section, React.ComponentType> = {
   alerts: AlertsView,
@@ -24,13 +24,8 @@ const VIEWS: Record<Section, React.ComponentType> = {
 export default function DashboardPage() {
   const { user, loading } = useAuth()
 
-  if (loading || !user) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-background">
-        <Spinner className="size-5 text-muted-foreground" />
-      </div>
-    )
-  }
+  // Session check: show the dashboard's shape, never a blank spinner.
+  if (loading || !user) return <DashboardSkeleton />
 
   return (
     <DashboardProvider>
