@@ -17,7 +17,7 @@ The UI is a separate **Next.js** app built later; this repository delivers its A
   WARNING → CRITICAL escalates in place.
 - **One AI call per incident** (not per log), queued with BullMQ, cached, behind circuit breakers; the template is
   always a valid fallback, so alerts never wait on an LLM.
-- Realtime SSE stream with single-use tickets; email via SMTP (Mailpit locally), at most two emails per incident.
+- Realtime SSE stream with single-use tickets; email via any SMTP server (opt-in), at most two emails per incident.
 - Role-based auth (reused & hardened from the original module): JWT access tokens + rotated refresh cookies with reuse
   detection, argon2id, brute-force throttling, audit log.
 - Telemetry simulator with 12 scenarios and a continuous stream; reconciler, auto-resolve and retention jobs.
@@ -35,7 +35,7 @@ flowchart LR
   redis --> worker[monitor-worker]
   worker --> pg
   worker -->|AI enrichment| llm[Gemini → OpenAI → Mistral → template]
-  worker -->|email| smtp[SMTP / Mailpit :8025]
+  worker -->|email| smtp[SMTP: Gmail / SES / …]
   redis -->|apimon:events| api
   api -->|SSE| client
 ```
@@ -70,12 +70,11 @@ docker compose up --build -d
 docker compose ps        # every service healthy within ~1–3 minutes
 ```
 
-| What             | URL                        |
-| ---------------- | -------------------------- |
-| API              | http://localhost:3001      |
-| Swagger UI       | http://localhost:3001/docs |
-| Simulator        | http://localhost:4400      |
-| Mailpit (emails) | http://localhost:8025      |
+| What       | URL                        |
+| ---------- | -------------------------- |
+| API        | http://localhost:3001      |
+| Swagger UI | http://localhost:3001/docs |
+| Simulator  | http://localhost:4400      |
 
 Admin login (local only, from `.env.example`): `admin@example.com` / `dev-only-Admin-2026`.
 `DEMO_MODE=true` in `.env.example` lets anonymous callers ingest and read alerts; production refuses to start with it.
@@ -92,20 +91,20 @@ curl -s localhost:3001/alerts
 
 > AppointmentAPI failed with status 500 and returned 0 records (response time 5500 ms). Possible outage or data issue.
 
-Send it again: still one alert, `occurrence_count: 2`. Mailpit shows one CRITICAL email.
+Send it again: still one alert, `occurrence_count: 2`. With email configured, one CRITICAL email goes out.
 
 More: `npm run ingest:file -- data/samples/edge-cases.json`, every request in [docs/api.http](docs/api.http), or run
 a scenario through Swagger UI (`POST /api/v1/simulator/scenarios/outage-burst`).
 
 ## Email notifications
 
-Locally, every email goes to **Mailpit** (http://localhost:8025): nothing leaves your machine, which is why a test
-email to a real address shows "accepted" but never arrives in that inbox.
+Email is **off by default** (`EMAIL_ENABLED=false`). Turn it on with a real SMTP server; the API refuses to start
+with `EMAIL_ENABLED=true` and no `SMTP_HOST`.
 
 - **Change recipients** without a restart: dashboard → Settings → Alert emails (or `PATCH /api/v1/settings/notifications`).
   Until you save a list there, `ALERT_EMAIL_TO` from `.env` is used.
 - **Check delivery**: Settings → "Send test email" reports exactly what the SMTP server answered.
-- **Send real email**: point the SMTP settings in `.env` at a real provider, then `docker compose up -d` (API + worker):
+- **Turn it on**: set these in `.env`, then `docker compose up -d monitor-api monitor-worker`:
 
 ```dotenv
 EMAIL_ENABLED=true
@@ -119,8 +118,7 @@ ALERT_EMAIL_MIN_SEVERITY=CRITICAL        # or WARNING to email every incident
 ```
 
 Gmail needs 2-step verification and an **App password** (Google Account → Security → App passwords); your normal
-password is rejected. Providers such as Resend or SendGrid need a verified sender domain. Compose overrides `SMTP_HOST`
-with `mailpit` only when it is empty.
+password is rejected. Providers such as Resend or SendGrid need a verified sender domain.
 
 ## Enabling a real LLM
 
@@ -149,7 +147,7 @@ through to the next provider and finally the template (`FALLBACK`). Provider cir
 | 7.1 Store anomalies             | PostgreSQL `alerts` + `telemetry_logs`                                                  | integration                                |
 | 7.2 REST `/alerts` (active)     | `GET /alerts`, `GET /api/v1/alerts` (default `ACTIVE`)                                  | integration                                |
 | 7.3 Frontend                    | Contract for the later Next.js app: OpenAPI, Swagger UI, CORS, cookies, SSE             | `contract.test.ts`                         |
-| 7.4 Email (optional)            | BullMQ email jobs via SMTP (Mailpit)                                                    | `realtime-jobs.test.ts`, Mailpit           |
+| 7.4 Email (optional)            | BullMQ email jobs via SMTP (opt-in)                                                     | `realtime-jobs.test.ts`, Send test email   |
 | 8 Node.js / Express, modular    | Express 5 + TypeScript, routes → controller → service → repository                      | code                                       |
 | 8 Batch processing              | ≤ 1000 items, chunked transactional writes                                              | integration (1000 items)                   |
 | 8 Error handling                | typed errors, central handler, per-item rejection                                       | integration                                |
@@ -198,7 +196,7 @@ mode, any `dev-only-` secret, insecure cookies, or plain-http CORS origins.
 
 ```bash
 npm install
-npm run dev:infra          # postgres, redis, mailpit in Docker
+npm run dev:infra          # postgres, redis in Docker
 npm run db:migrate
 npm run dev                # api + worker + simulator on the host (watch mode)
 ```

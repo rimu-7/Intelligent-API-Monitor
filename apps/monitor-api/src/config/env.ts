@@ -171,9 +171,10 @@ const envSchema = z
     MISTRAL_API_KEY: optionalString(),
     MISTRAL_MODEL: optionalString(),
 
-    EMAIL_ENABLED: bool('true'),
-    SMTP_HOST: z.preprocess(blankToUndefined, z.string().trim().default('localhost')),
-    SMTP_PORT: int(1025, 1, 65535),
+    // Off until a real SMTP server is configured (no local mail catcher ships with the stack).
+    EMAIL_ENABLED: bool('false'),
+    SMTP_HOST: optionalString(),
+    SMTP_PORT: int(587, 1, 65535),
     SMTP_SECURE: bool('false'),
     SMTP_USER: optionalString(),
     SMTP_PASSWORD: optionalString(),
@@ -209,6 +210,14 @@ const envSchema = z
           message: `${prefix}_MODEL is required when ${prefix}_API_KEY is set`,
         });
       }
+    }
+
+    if (env.EMAIL_ENABLED && !env.SMTP_HOST) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SMTP_HOST'],
+        message: 'SMTP_HOST is required when EMAIL_ENABLED=true (e.g. smtp.gmail.com)',
+      });
     }
 
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {

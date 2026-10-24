@@ -25,14 +25,28 @@ describe('env: booleans', () => {
   it('treats blank strings as unset (Compose passes "" for unset vars)', () => {
     const env = makeEnv({ DEMO_MODE: '', EMAIL_ENABLED: '  ', GEMINI_API_KEY: '', SMTP_HOST: '' });
     expect(env.DEMO_MODE).toBe(false);
-    expect(env.EMAIL_ENABLED).toBe(true);
+    expect(env.EMAIL_ENABLED).toBe(false);
     expect(env.GEMINI_API_KEY).toBeUndefined();
-    expect(env.SMTP_HOST).toBe('localhost');
+    expect(env.SMTP_HOST).toBeUndefined();
   });
 
   it('rejects anything that is not "true"/"false"', () => {
     expect(problemsOf({ DEMO_MODE: 'yes' }).join()).toMatch(/DEMO_MODE/);
     expect(problemsOf({ COOKIE_SECURE: '1' }).join()).toMatch(/COOKIE_SECURE/);
+  });
+});
+
+describe('env: email', () => {
+  it('is off by default and needs no SMTP server then', () => {
+    const env = makeEnv({ EMAIL_ENABLED: undefined, SMTP_HOST: undefined });
+    expect(env.EMAIL_ENABLED).toBe(false);
+    expect(env.SMTP_HOST).toBeUndefined();
+    expect(env.SMTP_PORT).toBe(587);
+  });
+
+  it('requires SMTP_HOST when EMAIL_ENABLED=true', () => {
+    expect(problemsOf({ EMAIL_ENABLED: 'true', SMTP_HOST: '' }).join()).toMatch(/SMTP_HOST is required/);
+    expect(makeEnv({ EMAIL_ENABLED: 'true', SMTP_HOST: 'smtp.gmail.com' }).SMTP_HOST).toBe('smtp.gmail.com');
   });
 });
 

@@ -117,3 +117,17 @@ env only: they are secrets/infrastructure, and the GET endpoint exposes only whe
 password. Both changes and test sends are audited.
 
 **Consequences.** One extra row read per alert email (emails are rare). The `rbac` unit test now counts 10 permissions.
+
+## ADR-019 No bundled mail catcher; email is opt-in
+
+**Context.** Mailpit caught every email locally, but once a real SMTP server was configured it was unused, and the
+smoke test still depended on its inbox.
+
+**Decision.** Mailpit is removed from Compose and `dev:infra`. `EMAIL_ENABLED` now defaults to `false` and
+`SMTP_PORT` to 587; `EMAIL_ENABLED=true` without `SMTP_HOST` fails env validation, so a missing mail server is caught
+at startup instead of producing failed notifications. Delivery is verified with `POST /api/v1/settings/notifications/test`.
+The smoke test only reads the email configuration: sending would mail real recipients on every run. Integration tests
+are unaffected (they inject a fake mailer).
+
+**Consequences.** A fresh checkout sends no email until SMTP is configured. `GET /api/v1/settings/notifications`
+reports `smtp.host: null` when unset.

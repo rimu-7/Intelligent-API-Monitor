@@ -12,7 +12,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "dev:infra": "docker compose up -d postgres redis mailpit",
+    "dev:infra": "docker compose up -d postgres redis",
     "dev": "concurrently -k -n api,worker,sim -c blue,magenta,green \"npm run dev:server -w @apimon/monitor-api\" \"npm run dev:worker -w @apimon/monitor-api\" \"npm run dev -w @apimon/telemetry-simulator\"",
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint .",

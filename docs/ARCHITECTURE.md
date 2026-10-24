@@ -9,7 +9,6 @@
 | `telemetry-simulator` (:4400) | synthetic healthcare telemetry, scenarios, stream                             | stream timer                    | dev tool                                    |
 | PostgreSQL 17                 | source of truth                                                               | all durable data                | vertical / read replicas                    |
 | Redis 7                       | BullMQ queues, caches, rate limits, idempotency markers, pub/sub, SSE tickets | rebuildable / disposable        | —                                           |
-| Mailpit                       | local SMTP catcher                                                            | —                               | —                                           |
 | `migrate`                     | one-shot migrations + idempotent admin seed under an advisory lock            | —                               | —                                           |
 
 The API and worker are the same image with different entrypoints (`dist/server.js`, `dist/worker.js`).

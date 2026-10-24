@@ -8,7 +8,7 @@
 
 | In scope (build now) | Out of scope (later) |
 |---|---|
-| `monitor-api` (HTTP API + SSE), `monitor-worker` (AI, email, schedulers), `telemetry-simulator`, PostgreSQL, Redis, Mailpit, Docker Compose, tests, API docs | The frontend. It will be a separate **Next.js** app. This build delivers a stable, documented API contract for it (§15). Do **not** create `apps/web`, React code, or nginx config. |
+| `monitor-api` (HTTP API + SSE), `monitor-worker` (AI, email, schedulers), `telemetry-simulator`, PostgreSQL, Redis, Docker Compose, tests, API docs | The frontend. It will be a separate **Next.js** app. This build delivers a stable, documented API contract for it (§15). Do **not** create `apps/web`, React code, or nginx config. |
 | The owner's **existing Express role-based auth** (roles `admin`, `manager`), audited, hardened and integrated (§12) | Any permissions for `manager` — the role exists but is granted nothing yet (deny by default) |
 
 ---
@@ -41,7 +41,7 @@ Build a system that ingests API response telemetry, detects anomalies determinis
 | 7.1 Store anomalies in a DB | PostgreSQL `alerts` + `telemetry_logs` | integration |
 | 7.2 REST `/alerts`, active anomalies | `GET /alerts` (root) and `GET /api/v1/alerts`, default `status=ACTIVE` | integration |
 | 7.3 Frontend | **Later (Next.js).** This build provides the frontend contract (§15), OpenAPI docs and Swagger UI at `/docs` | contract tests (§18), acceptance §20 |
-| 7.4 Email (optional) | BullMQ email job via SMTP (Mailpit locally) | integration + Mailpit UI |
+| 7.4 Email (optional) | BullMQ email job via any SMTP server (opt-in, `EMAIL_ENABLED`) | integration + Settings → Send test email |
 | 8 Node.js / Express, modular | Express 5 + TypeScript, layered modules | code review |
 | 8 Batch processing | arrays up to `MAX_BATCH_SIZE`, chunked transactional writes | integration (1000 items) |
 | 8 Error handling | typed errors, central handler, per-item quarantine | integration |
@@ -85,7 +85,7 @@ monitor-api ── enqueue jobs · publish events · cache · rate limits · ide
                                                                                       ▼             │
                                                                               monitor-worker ───────┘
                                                                                ├─ ai-enrichment ──▶ LLM providers (ordered failover → template)
-                                                                               ├─ email ──────────▶ SMTP (Mailpit :8025 locally)
+                                                                               ├─ email ──────────▶ SMTP (Gmail, SES, …; opt-in)
                                                                                └─ schedulers: reconcile · auto-resolve · retention
 ```
 
@@ -96,7 +96,6 @@ monitor-api ── enqueue jobs · publish events · cache · rate limits · ide
 | `telemetry-simulator` | 4400 | Synthetic healthcare API telemetry; pushes to `/monitor`; scenarios | n/a (dev tool) |
 | `postgres` | 5432 (bound to 127.0.0.1) | Source of truth | – |
 | `redis` | 6379 (bound to 127.0.0.1) | BullMQ, cache, rate limits, idempotency, pub/sub, SSE tickets | – |
-| `mailpit` | 8025 UI / 1025 SMTP | Local SMTP catcher for email demo | – |
 | `migrate` | – | One-shot: migrations + seed, then exits 0 | – |
 
 ### 2.2 Ingestion flow (summary; full detail in §8)
@@ -306,7 +305,7 @@ intelligent-api-monitor/
 
 | Script | Does |
 |---|---|
-| `npm run dev:infra` | `docker compose up -d postgres redis mailpit` |
+| `npm run dev:infra` | `docker compose up -d postgres redis` |
 | `npm run dev` | API, worker and simulator (`tsx watch --env-file=../../.env`) concurrently on the host |
 | `npm run build` | Build all workspaces |
 | `npm run test:contract` | Contract tests (routes ↔ OpenAPI, CORS, response shapes) |
@@ -395,10 +394,9 @@ MISTRAL_API_KEY=
 MISTRAL_MODEL=
 
 # ─── Email ──────────────────────────────────────────────────────────────────
-EMAIL_ENABLED=true
-# blank = localhost on host, mailpit inside Docker
+EMAIL_ENABLED=false             # opt-in; true requires SMTP_HOST (validated at startup)
 SMTP_HOST=
-SMTP_PORT=1025
+SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASSWORD=
@@ -1262,9 +1260,9 @@ x-api-env: &api-env
   OPENAI_MODEL: ${OPENAI_MODEL:-}
   MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
   MISTRAL_MODEL: ${MISTRAL_MODEL:-}
-  EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
-  SMTP_HOST: ${SMTP_HOST:-mailpit}
-  SMTP_PORT: ${SMTP_PORT:-1025}
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_SECURE: ${SMTP_SECURE:-false}
   SMTP_USER: ${SMTP_USER:-}
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
@@ -1311,11 +1309,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-
-  mailpit:
-    image: axllent/mailpit:latest   # pin a specific tag at implementation time
-    restart: unless-stopped
-    ports: ["127.0.0.1:8025:8025"]
 
   migrate:
     build: *api-build
@@ -1401,7 +1394,7 @@ volumes:
   14. SSE: ticket is single-use; a connected client receives `alert.created` after an ingest.
   15. Reconciler: an alert left `PENDING` with no job gets enqueued and completed.
 - **Contract** (`npm run test:contract`): the four checks in §15.6.
-- **Smoke** (`npm run smoke`, against the running compose stack): wait for readiness → POST PDF example → poll `GET /alerts` until `ai_status ≠ PENDING` (≤ 30 s) → print the alert → log in as admin → resolve → verify → run `outage-burst` via the API proxy → verify `occurrence_count 25` → check Mailpit API (`http://localhost:8025/api/v1/messages`) has at least one message. Exit non-zero on any failure.
+- **Smoke** (`npm run smoke`, against the running compose stack): wait for readiness → POST PDF example → poll `GET /alerts` until `ai_status ≠ PENDING` (≤ 30 s) → print the alert → log in as admin → resolve → verify → run `outage-burst` via the API proxy → verify `occurrence_count 25` → read `GET /api/v1/settings/notifications` and, if email is on, check an SMTP host is set (read-only: the smoke test never sends mail). Exit non-zero on any failure.
 - **CI** (`.github/workflows/ci.yml`): job 1 lint + typecheck + unit; job 2 integration + contract tests with Postgres 17 and Redis 7 service containers (`TEST_DATABASE_URL`, `TEST_REDIS_URL` without password); job 3 `docker compose build`.
 
 ---
@@ -1446,7 +1439,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 - **Gate:** related unit tests + integration group 10 pass; with real keys in `.env`, the PDF example produces `COMPLETED` text that passes the guard; with keys removed, `FALLBACK` with the exact template string.
 
 ### Phase 7 — Realtime, notifications, scheduled jobs
-- [x] Event bus, SSE hub with tickets and limits, email processor with Mailpit, reconcile / auto-resolve / retention schedulers.
+- [x] Event bus, SSE hub with tickets and limits, email processor (Mailpit at the time; removed in ADR-019), reconcile / auto-resolve / retention schedulers.
 - **Gate:** integration groups 14–15 pass; the PDF example produces exactly one email in Mailpit; `docker compose restart redis` → API and worker recover, and pending AI work completes.
 
 ### Phase 8 — Telemetry simulator
@@ -1479,7 +1472,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 6. Realtime: get a ticket (`POST /api/v1/alerts/stream-ticket` with the token), then `curl -N "localhost:3001/api/v1/alerts/stream?ticket=…"` in a second terminal; repeat step 2 → an `alert.updated` event arrives within 2 s.
 7. Resolve: `PATCH /api/v1/alerts/<id>/resolve` with the token → 200; `GET /alerts` no longer lists it; `GET /alerts?status=RESOLVED` does; the stream shows `alert.resolved`.
 8. Repeat step 2 → a new ACTIVE alert; the stream shows `alert.created`.
-9. Mailpit at `http://localhost:8025` shows the CRITICAL alert email with the AI (or template) text.
+9. With email configured, Settings → Send test email succeeds and the CRITICAL alert email (AI or template text) reaches the recipients.
 10. `POST /api/v1/simulator/scenarios/outage-burst` → one alert, `occurrence_count 25`, one additional email; `.../escalation` → severity rises to CRITICAL and an escalation email arrives.
 11. With an invalid LLM key → alerts still created with template text, no 5xx, a WARN log per failed provider call, circuit opens after 3 failures (visible in `/health`).
 12. `POST /api/v1/monitor` with `edge-cases.json` → outcomes per §6.5; `patient_name` appears nowhere in the DB or logs.
@@ -1523,7 +1516,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 
 ## 22. Documentation deliverables
 
-- **README.md**: one-paragraph overview; feature list; Mermaid architecture and ingestion sequence diagrams; Quick start (`cp .env.example .env`, `docker compose up --build`, URLs table: API 3001, Swagger UI 3001/docs, simulator 4400, Mailpit 8025); admin login (seed credentials from `.env.example`, local only); a note that the UI is a separate Next.js app (see `docs/FRONTEND_INTEGRATION.md`); "Try the assignment example" with curl for `/monitor` and `/alerts`; how to enable a real LLM (set key + model); assignment coverage table (§1.1); anomaly rules table (§7.2); AI design (prompt, guard, fallback, cache, one call per incident); configuration reference; running tests; project structure; security summary; trade-offs and future work (Postgres partitioning for telemetry, per-tenant isolation, more channels such as Slack/PagerDuty, anomaly baselines learned from history).
+- **README.md**: one-paragraph overview; feature list; Mermaid architecture and ingestion sequence diagrams; Quick start (`cp .env.example .env`, `docker compose up --build`, URLs table: API 3001, Swagger UI 3001/docs, simulator 4400); admin login (seed credentials from `.env.example`, local only); a note that the UI is a separate Next.js app (see `docs/FRONTEND_INTEGRATION.md`); "Try the assignment example" with curl for `/monitor` and `/alerts`; how to enable a real LLM (set key + model); assignment coverage table (§1.1); anomaly rules table (§7.2); AI design (prompt, guard, fallback, cache, one call per incident); configuration reference; running tests; project structure; security summary; trade-offs and future work (Postgres partitioning for telemetry, per-tenant isolation, more channels such as Slack/PagerDuty, anomaly baselines learned from history).
 - **docs/ARCHITECTURE.md**: components, data flow, design principles (§2.3), failure modes and how each is handled (LLM down, Redis down, worker down, DB down, duplicate delivery).
 - **docs/SECURITY.md**: threat model table (threat → mitigation → test): credential stuffing, token theft, CSRF, cross-origin abuse (CORS allowlist), XSS (API returns JSON only; clients must render alert text as text), SSRF (simulator URL is env-only), path traversal, prompt injection, mass assignment, privilege escalation, DoS (body/batch limits, rate limits, SSE caps), secrets leakage, PHI leakage.
 - **docs/DECISIONS.md**: ADR log.

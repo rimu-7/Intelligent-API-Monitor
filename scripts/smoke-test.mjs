@@ -4,7 +4,6 @@
 import { randomUUID } from 'node:crypto';
 
 const API = process.env.MONITOR_API_URL ?? 'http://localhost:3001';
-const MAILPIT = process.env.MAILPIT_URL ?? 'http://localhost:8025';
 const INGEST_KEY = process.env.INGEST_API_KEY;
 const EMAIL = process.env.SEED_ADMIN_EMAIL;
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD;
@@ -19,7 +18,8 @@ const ok = (message) => console.log(`  ✓ ${message}`);
 const section = (title) => console.log(`\n${++step}. ${title}`);
 const fail = (message, detail) => {
   console.error(`\n  ✗ ${message}`);
-  if (detail !== undefined) console.error(typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2));
+  if (detail !== undefined)
+    console.error(typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2));
   process.exit(1);
 };
 
@@ -40,7 +40,8 @@ const isPdfAlert = (alert) =>
   alert.anomaly_types.join(',') === 'SERVER_ERROR,HIGH_LATENCY,ZERO_RECORDS' &&
   alert.status === 'ACTIVE';
 
-if (!INGEST_KEY || !EMAIL || !PASSWORD) fail('INGEST_API_KEY, SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be set (run with --env-file=.env)');
+if (!INGEST_KEY || !EMAIL || !PASSWORD)
+  fail('INGEST_API_KEY, SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be set (run with --env-file=.env)');
 
 console.log(`Smoke test against ${API}`);
 
@@ -63,7 +64,10 @@ const auth = { authorization: `Bearer ${session.data.access_token}` };
 ok(`logged in as ${session.data.user.email} (${session.data.permissions.length} permissions)`);
 
 section('Ingest the PDF example');
-const ingest = await call('POST', '/monitor', { body: PDF, headers: { 'x-ingest-key': INGEST_KEY, 'idempotency-key': randomUUID() } });
+const ingest = await call('POST', '/monitor', {
+  body: PDF,
+  headers: { 'x-ingest-key': INGEST_KEY, 'idempotency-key': randomUUID() },
+});
 const { healthy, anomalous } = ingest.data;
 if (healthy !== 1 || anomalous !== 1) fail('expected healthy 1, anomalous 1', ingest.data);
 ok('POST /monitor → 200, healthy 1, anomalous 1');
@@ -91,24 +95,31 @@ if (!resolved.data.some((a) => a.id === alert.id)) fail('resolved alert missing 
 ok('PATCH /resolve → 200; gone from ACTIVE, present in RESOLVED');
 
 section('Run the outage-burst scenario through the API proxy');
-const isBurst = (a) => a.api_name === 'AppointmentAPI' && a.anomaly_types.join(',') === 'SERVER_ERROR' && a.status === 'ACTIVE';
-const before = (await call('GET', '/alerts?api_name=AppointmentAPI&limit=100', { headers: auth })).data.find(isBurst);
+const isBurst = (a) =>
+  a.api_name === 'AppointmentAPI' && a.anomaly_types.join(',') === 'SERVER_ERROR' && a.status === 'ACTIVE';
+const before = (await call('GET', '/alerts?api_name=AppointmentAPI&limit=100', { headers: auth })).data.find(
+  isBurst,
+);
 await call('POST', '/api/v1/simulator/scenarios/outage-burst', { headers: auth });
-const after = (await call('GET', '/alerts?api_name=AppointmentAPI&limit=100', { headers: auth })).data.find(isBurst);
+const after = (await call('GET', '/alerts?api_name=AppointmentAPI&limit=100', { headers: auth })).data.find(
+  isBurst,
+);
 if (!after) fail('outage-burst alert not found');
 const delta = after.occurrence_count - (before?.occurrence_count ?? 0);
 if (delta !== 25) fail(`expected occurrence_count +25, got +${delta}`, after);
-if (!before && after.occurrence_count !== 25) fail('new outage-burst alert should have occurrence_count 25', after);
+if (!before && after.occurrence_count !== 25)
+  fail('new outage-burst alert should have occurrence_count 25', after);
 ok(`one alert, occurrence_count ${after.occurrence_count} (+25)`);
 
-section('Check Mailpit for alert email');
-let messages = 0;
-for (let i = 0; i < 15 && messages === 0; i += 1) {
-  const res = await fetch(`${MAILPIT}/api/v1/messages`).catch(() => null);
-  messages = res?.ok ? (await res.json()).total : 0;
-  if (messages === 0) await sleep(1_000);
+section('Check email configuration');
+// Read-only on purpose: sending here would mail real people on every smoke run.
+// To prove delivery, use Settings → "Send test email" (POST /api/v1/settings/notifications/test).
+const mail = (await call('GET', '/api/v1/settings/notifications', { headers: auth })).data;
+if (mail.email_enabled) {
+  if (!mail.smtp.host) fail('EMAIL_ENABLED=true but no SMTP host is configured', mail);
+  ok(`email on via ${mail.smtp.host}:${mail.smtp.port} → ${mail.alert_email_to.join(', ')}`);
+} else {
+  ok('email is off (EMAIL_ENABLED=false); skipped');
 }
-if (messages < 1) fail(`no messages in Mailpit (${MAILPIT})`);
-ok(`${messages} message(s) in Mailpit`);
 
 console.log('\nSmoke test passed.');

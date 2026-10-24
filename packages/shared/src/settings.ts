@@ -10,7 +10,8 @@ export interface NotificationSettingsDto {
   min_severity: 'WARNING' | 'CRITICAL';
   from: string;
   smtp: {
-    host: string;
+    /** Null when no SMTP server is configured. */
+    host: string | null;
     port: number;
     secure: boolean;
     auth_configured: boolean;

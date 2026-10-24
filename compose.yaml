@@ -43,9 +43,9 @@ x-api-env: &api-env
   OPENAI_MODEL: ${OPENAI_MODEL:-}
   MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
   MISTRAL_MODEL: ${MISTRAL_MODEL:-}
-  EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
-  SMTP_HOST: ${SMTP_HOST:-mailpit}
-  SMTP_PORT: ${SMTP_PORT:-1025}
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_SECURE: ${SMTP_SECURE:-false}
   SMTP_USER: ${SMTP_USER:-}
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
@@ -92,11 +92,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-
-  mailpit:
-    image: axllent/mailpit:v1.31.6
-    restart: unless-stopped
-    ports: ["127.0.0.1:8025:8025", "127.0.0.1:1025:1025"]
 
   migrate:
     build: *api-build

@@ -16,7 +16,7 @@ Apps: `apps/monitor-api` (API :3001 + worker), `apps/telemetry-simulator` (:4400
 
 ```bash
 npm install
-npm run dev:infra          # postgres, redis, mailpit in Docker
+npm run dev:infra          # postgres, redis in Docker
 npm run dev                # api + worker + simulator on the host (watch mode)
 npm run lint
 npm run typecheck

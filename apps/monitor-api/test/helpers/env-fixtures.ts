@@ -15,6 +15,9 @@ export const BASE_ENV: EnvInput = {
   SEED_ADMIN_PASSWORD: 'test-Admin-password-2026',
   AI_SYNC_WAIT_MS: '0',
   SIMULATOR_URL: 'http://127.0.0.1:59999',
+  // Email on, against a test double mailer (tests inject FakeMailer).
+  EMAIL_ENABLED: 'true',
+  SMTP_HOST: 'localhost',
 };
 
 export const makeEnv = (overrides: EnvInput = {}): Env => parseEnv({ ...BASE_ENV, ...overrides });

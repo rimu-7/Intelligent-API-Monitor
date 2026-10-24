@@ -17,7 +17,7 @@ export interface Mailer {
   close(): void;
 }
 
-/** SMTP via nodemailer (Mailpit locally). */
+/** SMTP via nodemailer (any provider: Gmail, SES, Resend, …). Only used when EMAIL_ENABLED. */
 export const createMailer = (env: Env): Mailer => {
   const transport = nodemailer.createTransport({
     host: env.SMTP_HOST,

@@ -60,7 +60,7 @@ export class SettingsService {
       min_severity: env.ALERT_EMAIL_MIN_SEVERITY,
       from: env.EMAIL_FROM,
       smtp: {
-        host: env.SMTP_HOST,
+        host: env.SMTP_HOST ?? null,
         port: env.SMTP_PORT,
         secure: env.SMTP_SECURE,
         auth_configured: Boolean(env.SMTP_USER),
@@ -106,12 +106,12 @@ export class SettingsService {
           'This is a test email from API Monitor.',
           '',
           `Requested by: ${actor.email}`,
-          `SMTP server: ${env.SMTP_HOST}:${String(env.SMTP_PORT)}`,
+          `SMTP server: ${env.SMTP_HOST ?? 'not set'}:${String(env.SMTP_PORT)}`,
           '',
           'If you received this, alert emails will reach this address.',
         ].join('\n'),
         html: `<p>This is a test email from <strong>API Monitor</strong>.</p>
-<p>Requested by: ${escapeHtml(actor.email)}<br>SMTP server: ${escapeHtml(env.SMTP_HOST)}:${String(env.SMTP_PORT)}</p>
+<p>Requested by: ${escapeHtml(actor.email)}<br>SMTP server: ${escapeHtml(env.SMTP_HOST ?? 'not set')}:${String(env.SMTP_PORT)}</p>
 <p>If you received this, alert emails will reach this address.</p>`,
       });
       const durationMs = Math.round(performance.now() - started);
