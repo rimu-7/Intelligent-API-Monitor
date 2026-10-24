@@ -182,6 +182,23 @@ describe('email notifications', () => {
     expect(email?.html).toContain('Possible outage or data issue.');
   });
 
+  it('sends alert emails to recipients saved in settings, without a restart', async () => {
+    await ctx.container.settings.updateNotificationSettings(
+      { alert_email_to: ['me@example.com', 'team@example.com'] },
+      {
+        kind: 'user',
+        id: (await createUser(ctx, 'ADMIN')).id,
+        email: 'a@example.com',
+        role: 'ADMIN',
+        permissions: new Set(),
+      },
+      {},
+    );
+    await supertest(ctx.app).post('/monitor').set(ingestHeaders).send(PDF_EXAMPLE);
+    await waitFor(() => (mailer.sent.length > 0 ? true : undefined));
+    expect(mailer.sent[0]?.to).toBe('me@example.com, team@example.com');
+  });
+
   it('records failures and retries (FAILED → SENT)', async () => {
     mailer.failNext = 1;
     await supertest(ctx.app).post('/monitor').set(ingestHeaders).send(PDF_EXAMPLE);

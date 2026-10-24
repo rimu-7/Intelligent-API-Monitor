@@ -34,6 +34,9 @@ import { createProviders } from './modules/ai/providers';
 import type { LlmProvider } from './modules/ai/providers/llm-provider';
 import { NotificationsRepository } from './modules/notifications/notifications.repository';
 import { NotificationsService } from './modules/notifications/notifications.service';
+import { SettingsController } from './modules/settings/settings.controller';
+import { SettingsRepository } from './modules/settings/settings.repository';
+import { SettingsService } from './modules/settings/settings.service';
 import { EventBus } from './modules/realtime/event-bus';
 import { SseHub } from './modules/realtime/sse-hub';
 import { StreamTickets } from './modules/realtime/stream-tickets';
@@ -93,6 +96,8 @@ export interface Container {
   enrichment: AlertEnrichmentService;
   notifications: NotificationsRepository;
   notificationsService: NotificationsService;
+  settings: SettingsService;
+  settingsController: SettingsController;
   monitoringRepository: MonitoringRepository;
   streamTickets: StreamTickets;
   /** Present when `withRealtime` (API processes). */
@@ -195,11 +200,18 @@ export const buildContainer = (options: ContainerOptions): Container => {
   });
   const notifications = new NotificationsRepository(db);
   const mailer = options.mailer ?? createMailer(env);
+  const settings = new SettingsService({
+    repository: new SettingsRepository(db),
+    mailer,
+    audit,
+    env,
+    logger,
+  });
   const notificationsService = new NotificationsService({
     repository: notifications,
     alerts: alertsRepository,
     mailer,
-    to: env.ALERT_EMAIL_TO,
+    recipients: () => settings.alertRecipients(),
     publicWebUrl: env.PUBLIC_WEB_URL,
     logger,
   });
@@ -250,6 +262,8 @@ export const buildContainer = (options: ContainerOptions): Container => {
     enrichment,
     notifications,
     notificationsService,
+    settings,
+    settingsController: new SettingsController(settings),
     monitoringRepository,
     streamTickets,
     sseHub,

@@ -8,8 +8,12 @@ export interface MailMessage {
   html: string;
 }
 
+export interface MailSendResult {
+  messageId: string | null;
+}
+
 export interface Mailer {
-  send(message: MailMessage): Promise<void>;
+  send(message: MailMessage): Promise<MailSendResult>;
   close(): void;
 }
 
@@ -26,7 +30,8 @@ export const createMailer = (env: Env): Mailer => {
   });
   return {
     async send(message) {
-      await transport.sendMail({ from: env.EMAIL_FROM, ...message });
+      const info = await transport.sendMail({ from: env.EMAIL_FROM, ...message });
+      return { messageId: typeof info.messageId === 'string' ? info.messageId : null };
     },
     close() {
       transport.close();

@@ -20,6 +20,7 @@ import { registerMetaRoutes } from './modules/meta/meta.routes';
 import { registerMonitoringRoutes } from './modules/monitoring/monitoring.routes';
 import { registerRealtimeRoutes } from './modules/realtime/realtime.routes';
 import { registerSimulatorRoutes } from './modules/simulator/simulator.routes';
+import { registerSettingsRoutes } from './modules/settings/settings.routes';
 import { registerUsersRoutes } from './modules/users/users.routes';
 
 export const API_PREFIX = '/api/v1';
@@ -135,6 +136,7 @@ export const createApp = (
   registerAuthRoutes(api, container.authController, { env, redis, logger });
   registerUsersRoutes(api, container.usersController);
   registerAuditRoutes(api, container.audit);
+  registerSettingsRoutes(api, container.settingsController, { redis, logger });
 
   app.use(root.router);
   app.use(API_PREFIX, api.router);

@@ -33,6 +33,7 @@ tags:
   - name: Auth
   - name: Users
   - name: Audit
+  - name: Settings
   - name: Docs
 security:
   - bearerAuth: []
@@ -53,7 +54,11 @@ x-shared:
     - { name: severity, in: query, schema: { $ref: '#/components/schemas/Severity' } }
     - { name: api_name, in: query, schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$' } }
     - { name: anomaly_type, in: query, schema: { $ref: '#/components/schemas/AnomalyCode' } }
-    - { name: sort, in: query, schema: { type: string, enum: [last_seen_at, severity], default: last_seen_at } }
+    - {
+        name: sort,
+        in: query,
+        schema: { type: string, enum: [last_seen_at, severity], default: last_seen_at },
+      }
     - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
     - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
   alert-list-responses: &alertListResponses
@@ -483,7 +488,20 @@ paths:
           schema:
             type: string
             enum:
-              [pdf-example, healthy-batch, high-latency, server-error, zero-records, missing-records, invalid-metrics, auth-failure, rate-limited, outage-burst, escalation, mixed-batch]
+              [
+                pdf-example,
+                healthy-batch,
+                high-latency,
+                server-error,
+                zero-records,
+                missing-records,
+                invalid-metrics,
+                auth-failure,
+                rate-limited,
+                outage-burst,
+                escalation,
+                mixed-batch,
+              ]
       responses:
         '200':
           description: Scenario result
@@ -714,6 +732,80 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  # ─── Settings ──────────────────────────────────────────────────────────────
+  /api/v1/settings/notifications:
+    get:
+      tags: [Settings]
+      summary: Alert-email recipients and the (read-only) SMTP configuration
+      operationId: getNotificationSettings
+      responses:
+        '200':
+          description: Current notification settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationSettingsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Settings]
+      summary: Change who receives alert emails (applies immediately, no restart)
+      operationId: updateNotificationSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [alert_email_to]
+              properties:
+                alert_email_to:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items: { type: string, format: email }
+            example: { alert_email_to: [oncall@example.com] }
+      responses:
+        '200':
+          description: Updated notification settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationSettingsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/settings/notifications/test:
+    post:
+      tags: [Settings]
+      summary: Send a test email now and report the SMTP result (5 per minute per user)
+      operationId: sendTestEmail
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                to: { type: string, format: email, description: Defaults to the saved alert recipients }
+      responses:
+        '200':
+          description: The SMTP server accepted the message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestEmailResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '502':
+          description: The SMTP server rejected the message or did not answer (`EMAIL_DELIVERY_FAILED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -757,11 +849,17 @@ components:
               summary: Wrapped batch with a source label
               value:
                 logs:
-                  - { api_name: LabResultsAPI, response_time_ms: 2600, status_code: 200, records_returned: 18 }
+                  - {
+                      api_name: LabResultsAPI,
+                      response_time_ms: 2600,
+                      status_code: 200,
+                      records_returned: 18,
+                    }
                 source: webhook
             single:
               summary: Single object
-              value: { api_name: BillingServiceAPI, response_time_ms: 640, status_code: 503, records_returned: 12 }
+              value:
+                { api_name: BillingServiceAPI, response_time_ms: 640, status_code: 503, records_returned: 12 }
 
   responses:
     IngestOk:
@@ -813,7 +911,12 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
           example:
             success: false
-            error: { code: TOKEN_EXPIRED, message: Access token expired, request_id: 6b1f0a0e-7c4c-4c2a-9a45-55c7e4c2b0aa }
+            error:
+              {
+                code: TOKEN_EXPIRED,
+                message: Access token expired,
+                request_id: 6b1f0a0e-7c4c-4c2a-9a45-55c7e4c2b0aa,
+              }
     Forbidden:
       description: Authenticated but not allowed (`FORBIDDEN`)
       content:
@@ -868,10 +971,46 @@ components:
     ErrorCode:
       type: string
       enum:
-        [INVALID_JSON, INVALID_PAYLOAD, EMPTY_BATCH, VALIDATION_ERROR, INVALID_ID, UNKNOWN_SAMPLE_FILE, UNAUTHORIZED, INVALID_CREDENTIALS, TOKEN_EXPIRED, REFRESH_RACE, FORBIDDEN, NOT_FOUND, ALERT_ALREADY_RESOLVED, IDEMPOTENCY_IN_PROGRESS, LAST_ADMIN, CONFLICT, PAYLOAD_TOO_LARGE, BATCH_TOO_LARGE, ALL_ITEMS_REJECTED, IDEMPOTENCY_KEY_REUSED, RATE_LIMITED, INTERNAL_ERROR, SIMULATOR_UNAVAILABLE, SERVICE_UNAVAILABLE]
+        [
+          INVALID_JSON,
+          INVALID_PAYLOAD,
+          EMPTY_BATCH,
+          VALIDATION_ERROR,
+          INVALID_ID,
+          UNKNOWN_SAMPLE_FILE,
+          UNAUTHORIZED,
+          INVALID_CREDENTIALS,
+          TOKEN_EXPIRED,
+          REFRESH_RACE,
+          FORBIDDEN,
+          NOT_FOUND,
+          ALERT_ALREADY_RESOLVED,
+          IDEMPOTENCY_IN_PROGRESS,
+          LAST_ADMIN,
+          CONFLICT,
+          PAYLOAD_TOO_LARGE,
+          BATCH_TOO_LARGE,
+          ALL_ITEMS_REJECTED,
+          IDEMPOTENCY_KEY_REUSED,
+          RATE_LIMITED,
+          INTERNAL_ERROR,
+          SIMULATOR_UNAVAILABLE,
+          EMAIL_DELIVERY_FAILED,
+          SERVICE_UNAVAILABLE,
+        ]
     AnomalyCode:
       type: string
-      enum: [SERVER_ERROR, AUTH_FAILURE, CLIENT_ERROR, UNEXPECTED_STATUS, HIGH_LATENCY, ZERO_RECORDS, MISSING_RECORDS, INVALID_METRICS]
+      enum:
+        [
+          SERVER_ERROR,
+          AUTH_FAILURE,
+          CLIENT_ERROR,
+          UNEXPECTED_STATUS,
+          HIGH_LATENCY,
+          ZERO_RECORDS,
+          MISSING_RECORDS,
+          INVALID_METRICS,
+        ]
     Severity:
       type: string
       enum: [WARNING, CRITICAL]
@@ -886,7 +1025,19 @@ components:
       enum: [ADMIN, MANAGER]
     Permission:
       type: string
-      enum: [alerts:read, apis:read, telemetry:ingest, alerts:resolve, alerts:regenerate, simulator:control, apis:configure, users:manage, audit:read]
+      enum:
+        [
+          alerts:read,
+          apis:read,
+          telemetry:ingest,
+          alerts:resolve,
+          alerts:regenerate,
+          simulator:control,
+          apis:configure,
+          users:manage,
+          audit:read,
+          settings:manage,
+        ]
     TelemetrySource:
       type: string
       enum: [api, static_file, live_pull, simulator]
@@ -1007,7 +1158,8 @@ components:
         response_time_ms: { type: number, minimum: 0, maximum: 3600000, example: 5500 }
         status_code: { type: integer, minimum: 100, maximum: 599, example: 500 }
         records_returned: { type: integer, minimum: 0, maximum: 10000000, example: 0 }
-        observed_at: { type: string, format: date-time, description: Optional; at most 5 minutes in the future }
+        observed_at:
+          { type: string, format: date-time, description: Optional; at most 5 minutes in the future }
     TelemetryBatch:
       oneOf:
         - type: array
@@ -1059,7 +1211,22 @@ components:
         success: { const: true }
         data:
           type: object
-          required: [run_id, source, source_detail, received, processed, healthy, anomalous, rejected, alerts_created, alerts_updated, results, rejected_items, alerts]
+          required:
+            [
+              run_id,
+              source,
+              source_detail,
+              received,
+              processed,
+              healthy,
+              anomalous,
+              rejected,
+              alerts_created,
+              alerts_updated,
+              results,
+              rejected_items,
+              alerts,
+            ]
           properties:
             run_id: { type: string, format: uuid }
             source: { $ref: '#/components/schemas/TelemetrySource' }
@@ -1092,7 +1259,23 @@ components:
         meta: { $ref: '#/components/schemas/ListMeta' }
     MonitorRun:
       type: object
-      required: [id, source, source_detail, principal, received, processed, healthy, anomalous, rejected, alerts_created, alerts_updated, duration_ms, request_id, created_at]
+      required:
+        [
+          id,
+          source,
+          source_detail,
+          principal,
+          received,
+          processed,
+          healthy,
+          anomalous,
+          rejected,
+          alerts_created,
+          alerts_updated,
+          duration_ms,
+          request_id,
+          created_at,
+        ]
       properties:
         id: { type: string, format: uuid }
         source: { $ref: '#/components/schemas/TelemetrySource' }
@@ -1125,14 +1308,49 @@ components:
     AlertFields:
       type: object
       required:
-        [id, api_name, status, severity, previous_severity, anomaly_types, alert_message, probable_cause, recommended_action, status_code, response_time_ms, records_returned, last_status_code, last_response_time_ms, last_records_returned, peak_response_time_ms, occurrence_count, ai_status, ai_provider, ai_model, ai_generated_at, first_seen_at, last_seen_at, escalated_at, resolved_at, resolution_source, resolution_note, created_at, updated_at]
+        [
+          id,
+          api_name,
+          status,
+          severity,
+          previous_severity,
+          anomaly_types,
+          alert_message,
+          probable_cause,
+          recommended_action,
+          status_code,
+          response_time_ms,
+          records_returned,
+          last_status_code,
+          last_response_time_ms,
+          last_records_returned,
+          peak_response_time_ms,
+          occurrence_count,
+          ai_status,
+          ai_provider,
+          ai_model,
+          ai_generated_at,
+          first_seen_at,
+          last_seen_at,
+          escalated_at,
+          resolved_at,
+          resolution_source,
+          resolution_note,
+          created_at,
+          updated_at,
+        ]
       properties:
         id: { type: string, format: uuid }
         api_name: { type: string }
         status: { $ref: '#/components/schemas/AlertStatus' }
         severity: { $ref: '#/components/schemas/Severity' }
         previous_severity: { type: [string, 'null'], enum: [WARNING, CRITICAL, null] }
-        anomaly_types: { type: array, items: { $ref: '#/components/schemas/AnomalyCode' }, description: Ordered by priority }
+        anomaly_types:
+          {
+            type: array,
+            items: { $ref: '#/components/schemas/AnomalyCode' },
+            description: Ordered by priority,
+          }
         alert_message: { type: string, description: Render as plain text (it may come from an LLM). }
         probable_cause: { type: string }
         recommended_action: { type: string }
@@ -1158,7 +1376,17 @@ components:
         updated_at: { $ref: '#/components/schemas/Timestamp' }
     TelemetrySample:
       type: object
-      required: [id, status_code, response_time_ms, records_returned, severity, anomaly_types, observed_at, received_at]
+      required:
+        [
+          id,
+          status_code,
+          response_time_ms,
+          records_returned,
+          severity,
+          anomaly_types,
+          observed_at,
+          received_at,
+        ]
       properties:
         id: { type: integer }
         status_code: { $ref: '#/components/schemas/NullableInt' }
@@ -1185,7 +1413,8 @@ components:
           type: object
           required: [recent_samples]
           properties:
-            recent_samples: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/TelemetrySample' } }
+            recent_samples:
+              { type: array, maxItems: 20, items: { $ref: '#/components/schemas/TelemetrySample' } }
           unevaluatedProperties: false
     AlertListResponse:
       type: object
@@ -1247,7 +1476,18 @@ components:
     # ── apis ──
     MonitoredApi:
       type: object
-      required: [name, latency_warning_ms, latency_critical_ms, expects_records, uses_default_thresholds, first_seen_at, last_seen_at, last_hour, active_alerts]
+      required:
+        [
+          name,
+          latency_warning_ms,
+          latency_critical_ms,
+          expects_records,
+          uses_default_thresholds,
+          first_seen_at,
+          last_seen_at,
+          last_hour,
+          active_alerts,
+        ]
       properties:
         name: { type: string }
         latency_warning_ms: { type: integer, description: Effective threshold }
@@ -1261,7 +1501,8 @@ components:
           required: [requests, error_rate, p95_latency_ms]
           properties:
             requests: { type: integer }
-            error_rate: { type: number, minimum: 0, maximum: 1, description: Share of requests with status ≥ 400 }
+            error_rate:
+              { type: number, minimum: 0, maximum: 1, description: Share of requests with status ≥ 400 }
             p95_latency_ms: { $ref: '#/components/schemas/NullableInt' }
         active_alerts: { type: integer }
     ApiListResponse:
@@ -1280,6 +1521,44 @@ components:
         latency_warning_ms: { type: [integer, 'null'], minimum: 1, maximum: 600000 }
         latency_critical_ms: { type: [integer, 'null'], minimum: 1, maximum: 600000 }
         expects_records: { type: boolean }
+    NotificationSettingsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [alert_email_to, source, email_enabled, min_severity, from, smtp, updated_at]
+          properties:
+            alert_email_to: { type: array, items: { type: string } }
+            source: { type: string, enum: [database, environment] }
+            email_enabled: { type: boolean }
+            min_severity: { type: string, enum: [WARNING, CRITICAL] }
+            from: { type: string }
+            smtp:
+              type: object
+              required: [host, port, secure, auth_configured]
+              properties:
+                host: { type: string }
+                port: { type: integer }
+                secure: { type: boolean }
+                auth_configured: { type: boolean }
+            updated_at: { type: [string, 'null'], format: date-time }
+
+    TestEmailResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          type: object
+          required: [delivered, to, message_id, duration_ms]
+          properties:
+            delivered: { const: true }
+            to: { type: array, items: { type: string } }
+            message_id: { type: [string, 'null'] }
+            duration_ms: { type: integer }
+
     ThresholdsResponse:
       type: object
       required: [success, data]
@@ -1464,7 +1743,8 @@ components:
     # ── audit ──
     AuditLog:
       type: object
-      required: [id, actor_type, actor_id, action, target_type, target_id, metadata, ip, request_id, created_at]
+      required:
+        [id, actor_type, actor_id, action, target_type, target_id, metadata, ip, request_id, created_at]
       properties:
         id: { type: integer }
         actor_type: { type: string, enum: [user, service, system, anonymous] }

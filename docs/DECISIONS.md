@@ -101,3 +101,19 @@ Docker Compose parses `SMTP_HOST=     # blank = …` as the value `# blank = …
 - **Email subject** follows §13.2 for NEW notifications; ESCALATED ones append ` (escalated)` and show `WARNING → CRITICAL`.
 - **Retention** uses `telemetry_logs.observed_at` (indexed) and `rejected_telemetry.received_at`; runs are deleted only when no telemetry or rejected rows reference them.
 - **Missing samples directory** (the worker has no mount) yields an empty allowlist instead of a crash.
+
+## ADR-018 Runtime alert-email recipients
+
+**Context.** Recipients came only from `ALERT_EMAIL_TO`, so changing them meant editing `.env` and restarting, and there
+was no way to check from the UI that email works.
+
+**Decision.** A small `app_settings` table (key → JSON) stores the recipient list under key `notifications`, edited by
+admins through `PATCH /api/v1/settings/notifications` (new permission `settings:manage`). The worker resolves recipients
+per email, so changes apply to the next notification without a restart; when nothing is saved, or the row is unreadable,
+`ALERT_EMAIL_TO` (comma-separated allowed) is used. `POST /api/v1/settings/notifications/test` sends one email
+synchronously and returns the SMTP result, or 502 `EMAIL_DELIVERY_FAILED` with the server's reason; it is rate-limited to
+5 per minute per user because each call opens a real SMTP connection. SMTP host, port, credentials and sender stay in
+env only: they are secrets/infrastructure, and the GET endpoint exposes only whether a login is configured, never the
+password. Both changes and test sends are audited.
+
+**Consequences.** One extra row read per alert email (emails are rare). The `rbac` unit test now counts 10 permissions.

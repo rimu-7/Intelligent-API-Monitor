@@ -15,7 +15,9 @@ export type AuditAction =
   | 'user.reactivated'
   | 'alert.resolved'
   | 'alert.regenerated'
-  | 'api.thresholds_changed';
+  | 'api.thresholds_changed'
+  | 'settings.notifications_changed'
+  | 'settings.test_email_sent';
 
 export interface AuditContext {
   ip?: string | undefined;

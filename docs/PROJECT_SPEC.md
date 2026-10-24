@@ -844,6 +844,8 @@ Indexes: **`alerts_active_fingerprint_uq` UNIQUE `(fingerprint)` WHERE `status =
 
 **alert_notifications** — `id`, `alert_id → alerts ON DELETE CASCADE`, `channel varchar(16) NOT NULL DEFAULT 'email'`, `reason notification_reason NOT NULL`, `status notification_status NOT NULL DEFAULT 'PENDING'`, `attempts int NOT NULL DEFAULT 0`, `last_error varchar(500)`, `sent_at`, `created_at`, `updated_at`. UNIQUE `(alert_id, channel, reason)`.
 
+**app_settings** — `key varchar(64) PK`, `value jsonb NOT NULL`, `updated_by → users ON DELETE SET NULL`, `updated_at`. Key `notifications` holds `{ alert_email_to: string[] }`; when absent, `ALERT_EMAIL_TO` applies.
+
 ### 10.1 Migrations and seed (`migrate.ts`)
 
 - drizzle-kit generates SQL into `apps/monitor-api/drizzle/` (committed). Runtime applies them with Drizzle's node-postgres migrator.
@@ -894,10 +896,12 @@ Indexes: **`alerts_active_fingerprint_uq` UNIQUE `(fingerprint)` WHERE `status =
 | GET `/api/v1/auth/me`, POST `/api/v1/auth/change-password` | any authenticated user (incl. `MANAGER`) | Current user + permissions; password change |
 | GET/POST `/api/v1/users`, PATCH `/api/v1/users/:id` | `users:manage` | User admin |
 | GET `/api/v1/audit-logs` | `audit:read` | Audit trail (paginated) |
+| GET/PATCH `/api/v1/settings/notifications` | `settings:manage` | Alert-email recipients (override `ALERT_EMAIL_TO` at runtime) and read-only SMTP info |
+| POST `/api/v1/settings/notifications/test` | `settings:manage` | Send a test email synchronously; 502 `EMAIL_DELIVERY_FAILED` on SMTP failure; 5/min per user |
 
 ### 11.3 Error codes (shared `ErrorCode` union)
 
-`INVALID_JSON` 400 · `INVALID_PAYLOAD` 400 · `EMPTY_BATCH` 400 · `VALIDATION_ERROR` 400 · `INVALID_ID` 400 · `UNKNOWN_SAMPLE_FILE` 400 · `UNAUTHORIZED` 401 · `INVALID_CREDENTIALS` 401 · `TOKEN_EXPIRED` 401 · `REFRESH_RACE` 401 · `FORBIDDEN` 403 · `NOT_FOUND` 404 · `ALERT_ALREADY_RESOLVED` 409 · `IDEMPOTENCY_IN_PROGRESS` 409 · `LAST_ADMIN` 409 · `PAYLOAD_TOO_LARGE` 413 · `BATCH_TOO_LARGE` 413 · `ALL_ITEMS_REJECTED` 422 · `IDEMPOTENCY_KEY_REUSED` 422 · `RATE_LIMITED` 429 (with `Retry-After`) · `INTERNAL_ERROR` 500 · `SIMULATOR_UNAVAILABLE` 502 · `SERVICE_UNAVAILABLE` 503.
+`INVALID_JSON` 400 · `INVALID_PAYLOAD` 400 · `EMPTY_BATCH` 400 · `VALIDATION_ERROR` 400 · `INVALID_ID` 400 · `UNKNOWN_SAMPLE_FILE` 400 · `UNAUTHORIZED` 401 · `INVALID_CREDENTIALS` 401 · `TOKEN_EXPIRED` 401 · `REFRESH_RACE` 401 · `FORBIDDEN` 403 · `NOT_FOUND` 404 · `ALERT_ALREADY_RESOLVED` 409 · `IDEMPOTENCY_IN_PROGRESS` 409 · `LAST_ADMIN` 409 · `PAYLOAD_TOO_LARGE` 413 · `BATCH_TOO_LARGE` 413 · `ALL_ITEMS_REJECTED` 422 · `IDEMPOTENCY_KEY_REUSED` 422 · `RATE_LIMITED` 429 (with `Retry-After`) · `INTERNAL_ERROR` 500 · `SIMULATOR_UNAVAILABLE` 502 · `EMAIL_DELIVERY_FAILED` 502 · `SERVICE_UNAVAILABLE` 503.
 
 ### 11.4 AlertDto (example for the PDF anomaly)
 
@@ -981,6 +985,7 @@ The owner provides a working Express role-based auth module with roles `admin` a
 | `apis:configure` | ✓ | | | |
 | `users:manage` | ✓ | | | |
 | `audit:read` | ✓ | | | |
+| `settings:manage` | ✓ | | | |
 
 ```ts
 export const ROLES = ['ADMIN', 'MANAGER'] as const;
@@ -1021,7 +1026,7 @@ export const ROLE_PERMISSIONS = {
 
 - Only admins create users (`POST /api/v1/users {email, password, role}`, `role` ∈ `ADMIN` | `MANAGER`, required); no public registration.
 - `PATCH /api/v1/users/:id {role?, is_active?}`: cannot change own role or deactivate self; cannot remove the last active admin (409 `LAST_ADMIN`).
-- Audit: `auth.login.success`, `auth.login.failure`, `auth.logout`, `auth.refresh_reuse_detected`, `auth.password_changed`, `user.created`, `user.role_changed`, `user.deactivated`, `alert.resolved`, `alert.regenerated`, `api.thresholds_changed`.
+- Audit: `auth.login.success`, `auth.login.failure`, `auth.logout`, `auth.refresh_reuse_detected`, `auth.password_changed`, `user.created`, `user.role_changed`, `user.deactivated`, `alert.resolved`, `alert.regenerated`, `api.thresholds_changed`, `settings.notifications_changed`, `settings.test_email_sent`.
 
 ---
 

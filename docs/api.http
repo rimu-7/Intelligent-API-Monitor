@@ -265,6 +265,28 @@ GET {{baseUrl}}/api/v1/audit-logs?action=auth.login.failure
 Authorization: Bearer {{token}}
 
 ############################################################################
+# 9b. Alert-email settings
+############################################################################
+
+### Who receives alert emails, and the SMTP setup the server uses
+GET {{baseUrl}}/api/v1/settings/notifications
+Authorization: Bearer {{token}}
+
+### Change the recipients (takes effect for the next alert email)
+PATCH {{baseUrl}}/api/v1/settings/notifications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "alert_email_to": ["oncall@example.com"] }
+
+### Send a test email to the saved recipients (or pass "to")
+POST {{baseUrl}}/api/v1/settings/notifications/test
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+############################################################################
 # 10. Session end
 ############################################################################
 

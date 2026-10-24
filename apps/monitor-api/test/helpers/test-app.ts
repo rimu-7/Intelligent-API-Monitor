@@ -19,6 +19,7 @@ export interface TestContext {
 }
 
 const TABLES = [
+  'app_settings',
   'alert_notifications',
   'telemetry_logs',
   'rejected_telemetry',

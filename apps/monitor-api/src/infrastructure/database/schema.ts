@@ -265,6 +265,16 @@ export const alertNotifications = pgTable(
   ],
 );
 
+// ─── Settings ───────────────────────────────────────────────────────────────
+
+/** Runtime settings an admin can change without a redeploy (one row per key, value is JSON). */
+export const appSettings = pgTable('app_settings', {
+  key: varchar('key', { length: 64 }).primaryKey(),
+  value: jsonb('value').$type<Record<string, unknown>>().notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+});
+
 export type UserRow = typeof users.$inferSelect;
 export type RefreshTokenRow = typeof refreshTokens.$inferSelect;
 export type AlertRow = typeof alerts.$inferSelect;
@@ -273,3 +283,4 @@ export type MonitoredApiRow = typeof monitoredApis.$inferSelect;
 export type TelemetryLogRow = typeof telemetryLogs.$inferSelect;
 export type AlertNotificationRow = typeof alertNotifications.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
+export type AppSettingRow = typeof appSettings.$inferSelect;

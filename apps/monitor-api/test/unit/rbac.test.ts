@@ -13,7 +13,7 @@ import { anonymousPrincipal, ingestKeyPrincipal, userPrincipal } from '../../src
 describe('ROLE_PERMISSIONS (§12.2)', () => {
   it('grants ADMIN every permission', () => {
     expect([...ROLE_PERMISSIONS.ADMIN].sort()).toEqual([...PERMISSIONS].sort());
-    expect(ALL_PERMISSIONS).toHaveLength(9);
+    expect(ALL_PERMISSIONS).toHaveLength(10);
   });
 
   it('grants MANAGER nothing (deny by default)', () => {

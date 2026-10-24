@@ -97,6 +97,31 @@ Send it again: still one alert, `occurrence_count: 2`. Mailpit shows one CRITICA
 More: `npm run ingest:file -- data/samples/edge-cases.json`, every request in [docs/api.http](docs/api.http), or run
 a scenario through Swagger UI (`POST /api/v1/simulator/scenarios/outage-burst`).
 
+## Email notifications
+
+Locally, every email goes to **Mailpit** (http://localhost:8025): nothing leaves your machine, which is why a test
+email to a real address shows "accepted" but never arrives in that inbox.
+
+- **Change recipients** without a restart: dashboard → Settings → Alert emails (or `PATCH /api/v1/settings/notifications`).
+  Until you save a list there, `ALERT_EMAIL_TO` from `.env` is used.
+- **Check delivery**: Settings → "Send test email" reports exactly what the SMTP server answered.
+- **Send real email**: point the SMTP settings in `.env` at a real provider, then `docker compose up -d` (API + worker):
+
+```dotenv
+EMAIL_ENABLED=true
+SMTP_HOST=smtp.gmail.com        # or smtp.resend.com, smtp.sendgrid.net, email-smtp.<region>.amazonaws.com, …
+SMTP_PORT=465                   # 465 = TLS from the start; use 587 with SMTP_SECURE=false for STARTTLS
+SMTP_SECURE=true
+SMTP_USER=you@gmail.com         # provider username (Resend: "resend", SendGrid: "apikey")
+SMTP_PASSWORD=<app password or API key>
+EMAIL_FROM=API Monitor <you@gmail.com>   # must be an address/domain the provider lets you send from
+ALERT_EMAIL_MIN_SEVERITY=CRITICAL        # or WARNING to email every incident
+```
+
+Gmail needs 2-step verification and an **App password** (Google Account → Security → App passwords); your normal
+password is rejected. Providers such as Resend or SendGrid need a verified sender domain. Compose overrides `SMTP_HOST`
+with `mailpit` only when it is empty.
+
 ## Enabling a real LLM
 
 Set a key **and** a model for any provider in `.env`, then `docker compose up -d`:

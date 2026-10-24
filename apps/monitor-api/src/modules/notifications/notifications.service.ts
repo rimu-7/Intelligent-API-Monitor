@@ -8,7 +8,8 @@ export interface NotificationsServiceDeps {
   repository: NotificationsRepository;
   alerts: Pick<AlertsRepository, 'findById'>;
   mailer: Mailer;
-  to: string;
+  /** Resolved per email so recipient changes apply without a restart. */
+  recipients: () => Promise<string[]>;
   publicWebUrl: string;
   logger: Logger;
 }
@@ -29,7 +30,8 @@ export class NotificationsService {
         return 'skipped';
       }
       const email = buildAlertEmail(alert, claimed.reason, this.deps.publicWebUrl);
-      await mailer.send({ to: this.deps.to, ...email });
+      const to = await this.deps.recipients();
+      await mailer.send({ to: to.join(', '), ...email });
       await repository.markSent(claimed.id);
       logger.info(
         {

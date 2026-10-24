@@ -18,6 +18,7 @@ export const PERMISSIONS = [
   'apis:configure',
   'users:manage',
   'audit:read',
+  'settings:manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
