@@ -1,4 +1,5 @@
 import type { AlertDetailDto, AlertDto, AlertSummaryDto } from '@apimon/shared';
+import { SUMMARY_CACHE_KEY } from './alerts.cache';
 import type { Redis } from 'ioredis';
 import type { Logger } from '../../infrastructure/logger';
 import type { Queues } from '../../infrastructure/queue/queues';
@@ -10,7 +11,6 @@ import { toAlertDetailDto, toAlertDto } from './alerts.mapper';
 import type { AlertsRepository } from './alerts.repository';
 import type { ListAlertsInput } from './alerts.schemas';
 
-export const SUMMARY_CACHE_KEY = 'cache:alerts:summary';
 const SUMMARY_TTL_SECONDS = 5;
 
 export interface AlertsServiceDeps {
