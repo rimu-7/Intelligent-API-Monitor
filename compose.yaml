@@ -1,10 +1,10 @@
 name: apimon
 
-x-api-build: &api-build
+x-backend-build: &backend-build
   context: .
-  dockerfile: apps/monitor-api/Dockerfile
+  dockerfile: apps/backend/Dockerfile
 
-x-api-env: &api-env
+x-backend-env: &backend-env
   APP_ENV: ${APP_ENV:-development}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DEMO_MODE: ${DEMO_MODE:-false}
@@ -25,7 +25,7 @@ x-api-env: &api-env
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
   INGEST_API_KEY: ${INGEST_API_KEY}
   INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
-  SIMULATOR_URL: http://telemetry-simulator:4400
+  SIMULATOR_URL: http://simulator:4400
   SAMPLES_DIR: /app/data/samples
   LATENCY_WARNING_MS: ${LATENCY_WARNING_MS:-2000}
   LATENCY_CRITICAL_MS: ${LATENCY_CRITICAL_MS:-5000}
@@ -95,17 +95,17 @@ services:
       retries: 20
 
   migrate:
-    build: *api-build
-    environment: *api-env
+    build: *backend-build
+    environment: *backend-env
     command: ["node", "dist/migrate.js"]
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  monitor-api:
+  backend:
     <<: *node-service
-    build: *api-build
-    environment: *api-env
+    build: *backend-build
+    environment: *backend-env
     command: ["node", "dist/server.js"]
     volumes: ["./data/samples:/app/data/samples:ro"]
     ports: ["${MONITOR_API_PORT:-3001}:3001"]
@@ -119,25 +119,25 @@ services:
       retries: 12
       start_period: 15s
 
-  monitor-worker:
+  worker:
     <<: *node-service
-    build: *api-build
-    environment: *api-env
+    build: *backend-build
+    environment: *backend-env
     command: ["node", "dist/worker.js"]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
-  telemetry-simulator:
+  simulator:
     <<: *node-service
     build:
       context: .
-      dockerfile: apps/telemetry-simulator/Dockerfile
+      dockerfile: apps/simulator/Dockerfile
     environment:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PORT: "4400"
-      MONITOR_API_URL: http://monitor-api:3001
+      MONITOR_API_URL: http://backend:3001
       INGEST_API_KEY: ${INGEST_API_KEY}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       SIMULATOR_SEED: ${SIMULATOR_SEED:-42}
@@ -149,20 +149,17 @@ services:
       timeout: 5s
       retries: 6
 
-  # Production build (minified, prerendered). For hot reload run `pnpm dev` in web-frontend/ instead.
   frontend:
+    <<: *node-service
     build:
-      context: ./web-frontend
-      target: runner
+      context: .
+      dockerfile: apps/frontend/Dockerfile
       args:
-        INTERNAL_API_URL: http://monitor-api:3001
+        INTERNAL_API_URL: http://backend:3001
         NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001}
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
+    ports: ["${FRONTEND_PORT:-3000}:3000"]
     depends_on:
-      monitor-api:
-        condition: service_healthy
+      backend: { condition: service_healthy }
 
 volumes:
   pgdata:

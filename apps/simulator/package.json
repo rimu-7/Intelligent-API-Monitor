@@ -1,5 +1,5 @@
 {
-  "name": "@apimon/telemetry-simulator",
+  "name": "@apimon/simulator",
   "version": "1.0.0",
   "private": true,
   "description": "Synthetic healthcare API telemetry generator and push client.",

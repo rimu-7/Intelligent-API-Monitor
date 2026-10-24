@@ -1,14 +1,14 @@
 {
-  "name": "web-frontend",
-  "version": "0.0.1",
-  "type": "module",
+  "name": "@apimon/frontend",
+  "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@12.4.2",
+  "description": "Next.js dashboard for the monitor API.",
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
+    "start": "next start --port 3000",
+    "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit"
   },
@@ -44,11 +44,5 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "unrs-resolver",
-      "esbuild"
-    ]
   }
 }

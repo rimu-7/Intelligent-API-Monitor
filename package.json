@@ -12,10 +12,14 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "setup": "cp -n .env.example .env 2>/dev/null || true && npm install",
     "dev:infra": "docker compose up -d postgres redis",
-    "dev": "concurrently -k -n api,worker,sim -c blue,magenta,green \"npm run dev:server -w @apimon/monitor-api\" \"npm run dev:worker -w @apimon/monitor-api\" \"npm run dev -w @apimon/telemetry-simulator\"",
+    "dev": "concurrently -k -n api,worker,sim,web -c blue,magenta,green,cyan \"npm run dev:server -w @apimon/backend\" \"npm run dev:worker -w @apimon/backend\" \"npm run dev -w @apimon/simulator\" \"npm run dev -w @apimon/frontend\"",
+    "dev:backend": "concurrently -k -n api,worker -c blue,magenta \"npm run dev:server -w @apimon/backend\" \"npm run dev:worker -w @apimon/backend\"",
+    "dev:frontend": "npm run dev -w @apimon/frontend",
+    "dev:simulator": "npm run dev -w @apimon/simulator",
     "build": "npm run build --workspaces --if-present",
-    "lint": "eslint .",
+    "lint": "eslint . && npm run lint -w @apimon/frontend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -23,8 +27,11 @@
     "test:integration": "npm run test:integration --workspaces --if-present",
     "test:contract": "npm run test:contract --workspaces --if-present",
     "test": "npm run test:unit && npm run test:integration && npm run test:contract",
-    "db:generate": "npm run db:generate -w @apimon/monitor-api",
-    "db:migrate": "npm run db:migrate -w @apimon/monitor-api",
+    "db:generate": "npm run db:generate -w @apimon/backend",
+    "db:migrate": "npm run db:migrate -w @apimon/backend",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
     "smoke": "node --env-file=.env scripts/smoke-test.mjs",
     "ingest:file": "node --env-file=.env scripts/ingest-file.mjs"
   },
@@ -41,5 +48,17 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.0",
     "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "argon2@0.45.1": true,
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "unrs-resolver@1.12.2": true,
+    "msgpackr-extract@3.0.4": true,
+    "fsevents@2.3.3": true,
+    "@scarf/scarf": false,
+    "@google/genai": false,
+    "protobufjs": false
   }
 }

@@ -6,9 +6,11 @@
 
 ### Scope of this build
 
+> **Update:** the frontend now lives in this monorepo as `apps/frontend` (see `docs/DECISIONS.md` ADR-022). The "out of scope" column below describes the original backend build.
+
 | In scope (build now) | Out of scope (later) |
 |---|---|
-| `monitor-api` (HTTP API + SSE), `monitor-worker` (AI, email, schedulers), `telemetry-simulator`, PostgreSQL, Redis, Docker Compose, tests, API docs | The frontend. It will be a separate **Next.js** app. This build delivers a stable, documented API contract for it (§15). Do **not** create `apps/web`, React code, or nginx config. |
+| `backend` (HTTP API + SSE), `worker` (AI, email, schedulers), `simulator`, PostgreSQL, Redis, Docker Compose, tests, API docs | The frontend. It will be a separate **Next.js** app. This build delivers a stable, documented API contract for it (§15). Do **not** create `apps/frontend`, React code, or nginx config. |
 | The owner's **existing Express role-based auth** (roles `admin`, `manager`), audited, hardened and integrated (§12) | Any permissions for `manager` — the role exists but is granted nothing yet (deny by default) |
 
 ---
@@ -74,16 +76,16 @@ Input is the exact array from the assignment:
 ### 2.1 Topology
 
 ```
-Next.js app (later, :3000) ─────────────▶ monitor-api :3001 ◀── curl / Postman / Swagger UI / CLI
+Next.js app (later, :3000) ─────────────▶ backend :3001 ◀── curl / Postman / Swagger UI / CLI
                                                                       │   ▲        │
                                               simulator control (HTTP)│   │ push   │ SQL (transactions)
                                                                       ▼   │        ▼
-                                                     telemetry-simulator :4400    PostgreSQL 17  ◀──┐
+                                                     simulator :4400    PostgreSQL 17  ◀──┐
                                                                                                     │
-monitor-api ── enqueue jobs · publish events · cache · rate limits · idempotency ──▶ Redis 7       │
+backend ── enqueue jobs · publish events · cache · rate limits · idempotency ──▶ Redis 7       │
                                                                                       │             │
                                                                                       ▼             │
-                                                                              monitor-worker ───────┘
+                                                                              worker ───────┘
                                                                                ├─ ai-enrichment ──▶ LLM providers (ordered failover → template)
                                                                                ├─ email ──────────▶ SMTP (Gmail, SES, …; opt-in)
                                                                                └─ schedulers: reconcile · auto-resolve · retention
@@ -91,9 +93,9 @@ monitor-api ── enqueue jobs · publish events · cache · rate limits · ide
 
 | Service | Port | Responsibility | Scales horizontally |
 |---|---|---|---|
-| `monitor-api` | 3001 | HTTP API, ingestion pipeline, auth, SSE hub, Swagger UI | yes (stateless; SSE fan-out via Redis pub/sub) |
-| `monitor-worker` | – | AI enrichment, email, scheduled jobs (same image as API, different entrypoint) | yes |
-| `telemetry-simulator` | 4400 | Synthetic healthcare API telemetry; pushes to `/monitor`; scenarios | n/a (dev tool) |
+| `backend` | 3001 | HTTP API, ingestion pipeline, auth, SSE hub, Swagger UI | yes (stateless; SSE fan-out via Redis pub/sub) |
+| `worker` | – | AI enrichment, email, scheduled jobs (same image as API, different entrypoint) | yes |
+| `simulator` | 4400 | Synthetic healthcare API telemetry; pushes to `/monitor`; scenarios | n/a (dev tool) |
 | `postgres` | 5432 (bound to 127.0.0.1) | Source of truth | – |
 | `redis` | 6379 (bound to 127.0.0.1) | BullMQ, cache, rate limits, idempotency, pub/sub, SSE tickets | – |
 | `migrate` | – | One-shot: migrations + seed, then exits 0 | – |
@@ -144,7 +146,7 @@ Install the latest stable release within each listed major at implementation tim
 
 ## 4. Repository layout
 
-If existing folders are present, move them into this layout in Phase 0/1 (`api-monitoring-system/` → `apps/monitor-api/`, `response-server/` → `apps/telemetry-simulator/`). The existing auth module is ported into `apps/monitor-api/src/modules/auth` and `modules/users` in Phase 3 (§12.1). Leave space for a future `apps/web` (Next.js) but do not create it.
+If existing folders are present, move them into this layout in Phase 0/1 (`api-monitoring-system/` → `apps/backend/`, `response-server/` → `apps/simulator/`). The existing auth module is ported into `apps/backend/src/modules/auth` and `modules/users` in Phase 3 (§12.1). Leave space for a future `apps/frontend` (Next.js) but do not create it.
 
 ```
 intelligent-api-monitor/
@@ -194,7 +196,7 @@ intelligent-api-monitor/
 │           ├── events.ts             # realtime event names + payload types
 │           └── api.ts                # success/error envelope types, ErrorCode union
 └── apps/
-    ├── monitor-api/                  # "@apimon/monitor-api"
+    ├── backend/                      # "@apimon/backend"
     │   ├── package.json
     │   ├── tsconfig.json
     │   ├── tsup.config.ts            # entries: server, worker, migrate; noExternal: ["@apimon/shared"]
@@ -282,7 +284,7 @@ intelligent-api-monitor/
     │       ├── integration/
     │       ├── contract/             # routes ↔ openapi.yaml, CORS, response shapes (§15, §18)
     │       └── helpers/              # test-app.ts, test-db.ts, fixtures.ts, auth.ts
-    ├── telemetry-simulator/          # "@apimon/telemetry-simulator"
+    ├── simulator/                    # "@apimon/simulator"
     │   ├── package.json, tsconfig.json, tsup.config.ts, vitest.config.ts, Dockerfile
     │   ├── src/
     │   │   ├── server.ts
@@ -411,8 +413,8 @@ TELEMETRY_RETENTION_DAYS=7
 
 # ─── Simulator ──────────────────────────────────────────────────────────────
 SIMULATOR_SEED=42
-SIMULATOR_URL=http://localhost:4400        # host mode; compose uses http://telemetry-simulator:4400
-MONITOR_API_URL=http://localhost:3001      # host mode; compose uses http://monitor-api:3001
+SIMULATOR_URL=http://localhost:4400        # host mode; compose uses http://simulator:4400
+MONITOR_API_URL=http://localhost:3001      # host mode; compose uses http://backend:3001
 STREAM_MAX_DURATION_MS=600000
 
 # ─── Misc ───────────────────────────────────────────────────────────────────
@@ -847,14 +849,14 @@ Indexes: **`alerts_active_fingerprint_uq` UNIQUE `(fingerprint)` WHERE `status =
 
 ### 10.1 Migrations and seed (`migrate.ts`)
 
-- drizzle-kit generates SQL into `apps/monitor-api/drizzle/` (committed). Runtime applies them with Drizzle's node-postgres migrator.
+- drizzle-kit generates SQL into `apps/backend/drizzle/` (committed). Runtime applies them with Drizzle's node-postgres migrator.
 - Wrap in `pg_advisory_lock(<constant>)` so concurrent starts can't race.
 - Seed (idempotent): create the admin from `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` **only if no user with that email exists** (never reset an existing password). No other users are seeded; tests create their own (including a `MANAGER` to prove deny-by-default).
 - `docker/postgres/init/01-create-test-db.sql`: `CREATE DATABASE apimon_test;` (runs only on an empty volume).
 
 ---
 
-## 11. HTTP API (`monitor-api`)
+## 11. HTTP API (`backend`)
 
 ### 11.1 Conventions
 
@@ -1064,7 +1066,7 @@ Completed jobs removed after 1 h / 1000 jobs; failed kept 7 days.
 
 ---
 
-## 14. Telemetry simulator (`apps/telemetry-simulator`, port 4400)
+## 14. Telemetry simulator (`apps/simulator`, port 4400)
 
 - **Catalog** (`api-profiles.ts`): `PatientDataAPI`, `AppointmentAPI`, `BillingServiceAPI`, `LabResultsAPI`, `EHRIntegrationAPI`, `PharmacyInventoryAPI`, `InsuranceEligibilityAPI`, `IdentityProviderAPI`. Each profile: median latency, log-normal spread, probabilities of 5xx, 401, 429, zero records, missing records, invalid metrics, record range. No vendor brand names.
 - **Generator**: seeded PRNG (mulberry32, `SIMULATOR_SEED`) → reproducible demos. Output is exactly the PDF item shape.
@@ -1119,7 +1121,7 @@ No frontend code is written in this build. The backend MUST make the Next.js app
 
 ### 15.5 Types and stability guarantees
 
-- `docs/openapi.yaml` is the contract. The Next.js app generates types with `openapi-typescript` from `http://localhost:3001/docs/openapi.json`. Once the Next.js app lives in this monorepo as `apps/web`, it can also import `@apimon/shared` (anomaly codes, labels, permissions, event types).
+- `docs/openapi.yaml` is the contract. The Next.js app generates types with `openapi-typescript` from `http://localhost:3001/docs/openapi.json`. Once the Next.js app lives in this monorepo as `apps/frontend`, it can also import `@apimon/shared` (anomaly codes, labels, permissions, event types).
 - Every response uses the envelope in §11.1; timestamps are ISO-8601 UTC strings; ids are UUIDs; list endpoints return `meta: { total, limit, offset }`; error `code` values are stable and enumerated in the OpenAPI spec. Breaking changes require a new API version path.
 
 ### 15.6 Contract tests (MUST, `test/contract/`, `npm run test:contract`)
@@ -1166,7 +1168,7 @@ Route-specific limits: ingestion 120/min per principal; login per §12.5; refres
 
 ## 17. Docker
 
-### 17.1 `apps/monitor-api/Dockerfile` (reference — adapt only if verification shows a problem)
+### 17.1 `apps/backend/Dockerfile` (reference — adapt only if verification shows a problem)
 
 ```dockerfile
 # syntax=docker/dockerfile:1.7
@@ -1178,9 +1180,9 @@ WORKDIR /app
 FROM base AS manifests
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
-COPY apps/monitor-api/package.json apps/monitor-api/
-COPY apps/telemetry-simulator/package.json apps/telemetry-simulator/
-# when the Next.js app is added as apps/web, add its package.json here too
+COPY apps/backend/package.json apps/backend/
+COPY apps/simulator/package.json apps/simulator/
+# when the Next.js app is added as apps/frontend, add its package.json here too
 
 FROM manifests AS deps
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -1188,24 +1190,24 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
-COPY apps/monitor-api apps/monitor-api
+COPY apps/backend apps/backend
 COPY docs/openapi.yaml docs/openapi.yaml
-RUN npm run build -w @apimon/monitor-api
+RUN npm run build -w @apimon/backend
 
 FROM manifests AS prod-deps
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace @apimon/monitor-api \
- && mkdir -p apps/monitor-api/node_modules
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace @apimon/backend \
+ && mkdir -p apps/backend/node_modules
 
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
-COPY --from=prod-deps --chown=node:node /app/apps/monitor-api/node_modules ./apps/monitor-api/node_modules
-COPY --from=build --chown=node:node /app/apps/monitor-api/package.json ./apps/monitor-api/
-COPY --from=build --chown=node:node /app/apps/monitor-api/dist ./apps/monitor-api/dist
-COPY --from=build --chown=node:node /app/apps/monitor-api/drizzle ./apps/monitor-api/drizzle
-COPY --from=build --chown=node:node /app/docs/openapi.yaml ./apps/monitor-api/openapi.yaml
-WORKDIR /app/apps/monitor-api
+COPY --from=prod-deps --chown=node:node /app/apps/backend/node_modules ./apps/backend/node_modules
+COPY --from=build --chown=node:node /app/apps/backend/package.json ./apps/backend/
+COPY --from=build --chown=node:node /app/apps/backend/dist ./apps/backend/dist
+COPY --from=build --chown=node:node /app/apps/backend/drizzle ./apps/backend/drizzle
+COPY --from=build --chown=node:node /app/docs/openapi.yaml ./apps/backend/openapi.yaml
+WORKDIR /app/apps/backend
 USER node
 EXPOSE 3001
 CMD ["node", "dist/server.js"]
@@ -1220,7 +1222,7 @@ name: apimon
 
 x-api-build: &api-build
   context: .
-  dockerfile: apps/monitor-api/Dockerfile
+  dockerfile: apps/backend/Dockerfile
 
 x-api-env: &api-env
   APP_ENV: ${APP_ENV:-development}
@@ -1243,7 +1245,7 @@ x-api-env: &api-env
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
   INGEST_API_KEY: ${INGEST_API_KEY}
   INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
-  SIMULATOR_URL: http://telemetry-simulator:4400
+  SIMULATOR_URL: http://simulator:4400
   SAMPLES_DIR: /app/data/samples
   LATENCY_WARNING_MS: ${LATENCY_WARNING_MS:-2000}
   LATENCY_CRITICAL_MS: ${LATENCY_CRITICAL_MS:-5000}
@@ -1320,7 +1322,7 @@ services:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  monitor-api:
+  backend:
     <<: *node-service
     build: *api-build
     environment: *api-env
@@ -1337,7 +1339,7 @@ services:
       retries: 12
       start_period: 15s
 
-  monitor-worker:
+  worker:
     <<: *node-service
     build: *api-build
     environment: *api-env
@@ -1346,16 +1348,16 @@ services:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
-  telemetry-simulator:
+  simulator:
     <<: *node-service
     build:
       context: .
-      dockerfile: apps/telemetry-simulator/Dockerfile
+      dockerfile: apps/simulator/Dockerfile
     environment:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PORT: "4400"
-      MONITOR_API_URL: http://monitor-api:3001
+      MONITOR_API_URL: http://backend:3001
       INGEST_API_KEY: ${INGEST_API_KEY}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       SIMULATOR_SEED: ${SIMULATOR_SEED:-42}
@@ -1414,7 +1416,7 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 ### Phase 1 — Foundation
 - [x] Monorepo layout (§4), `git mv` existing code, root scripts (§4.1), tsconfig base, ESLint, Prettier, `.editorconfig`, `.nvmrc`, `.gitignore`, `.dockerignore`, `.env.example` (§5.1).
 - [x] `packages/shared` with types/constants (§4).
-- [x] `monitor-api`: `env.ts` (§5.2), logger, errors, request context, error handler, not-found, `secure-router.ts`, `createApp`, `container.ts`, health routes, `/api/v1/meta`, graceful shutdown.
+- [x] `backend`: `env.ts` (§5.2), logger, errors, request context, error handler, not-found, `secure-router.ts`, `createApp`, `container.ts`, health routes, `/api/v1/meta`, graceful shutdown.
 - [x] Dockerfiles (§17), `compose.yaml`, postgres init script.
 - **Gate:** `cp .env.example .env && docker compose up --build -d` → `curl -fsS localhost:3001/health/ready` returns 200; env unit tests prove `"false"` parses to `false` and production guards refuse dev secrets.
 
@@ -1479,8 +1481,8 @@ Work through these in order. After each phase: `npm run lint && npm run typechec
 11. With an invalid LLM key → alerts still created with template text, no 5xx, a WARN log per failed provider call, circuit opens after 3 failures (visible in `/health`).
 12. `POST /api/v1/monitor` with `edge-cases.json` → outcomes per §6.5; `patient_name` appears nowhere in the DB or logs.
 13. Security: static file `../../.env` → 400; resolve without a token → 401; create a `MANAGER` via `POST /api/v1/users`, log in as them → `/auth/me` 200, resolve 403, `GET /api/v1/alerts` 403; wrong `x-ingest-key` → 401; repeated bad logins → 429; preflight with `Origin: http://evil.example` → no `Access-Control-Allow-Origin`.
-14. `APP_ENV=production` with `DEMO_MODE=true` or any `dev-only-` secret → `monitor-api` refuses to start with a clear message.
-15. `docker compose restart redis` and `docker compose restart monitor-worker` → no crash loops; pending AI work completes.
+14. `APP_ENV=production` with `DEMO_MODE=true` or any `dev-only-` secret → `backend` refuses to start with a clear message.
+15. `docker compose restart redis` and `docker compose restart worker` → no crash loops; pending AI work completes.
 16. Logs: one JSON line per request with `request_id`; `grep` for the admin password, JWT secret, ingest key and `Bearer ` finds nothing.
 17. `http://localhost:3001/docs` loads, "Authorize" works with a Bearer token and with `x-ingest-key`, and the PDF example runs from it; every request in `docs/api.http` succeeds.
 18. `npm run lint`, `npm run typecheck`, `npm test`, `npm run smoke` all pass.

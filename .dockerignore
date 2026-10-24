@@ -1,9 +1,12 @@
 **/node_modules
 **/dist
 **/coverage
+**/.next
 .git
 .env
 .env.*
 !.env.example
 *.log
-web-frontend
+*.tsbuildinfo
+docs/video
+docs/*.docx

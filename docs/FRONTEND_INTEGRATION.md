@@ -1,6 +1,6 @@
 # Frontend integration guide (Next.js)
 
-This backend is built to be consumed by a Next.js app that will live in `apps/web` later. Nothing here requires
+This backend is built to be consumed by a Next.js app that will live in `apps/frontend` later. Nothing here requires
 backend changes: the contract below is stable and enforced by contract tests (`npm run test:contract`).
 
 - **Contract:** `docs/openapi.yaml` (OpenAPI 3.1), served at `http://localhost:3001/docs/openapi.json`; Swagger UI at `/docs`.
@@ -16,7 +16,7 @@ backend changes: the contract below is stable and enforced by contract tests (`n
 The browser only talks to the Next.js origin, so the refresh cookie is first-party and CORS is not involved.
 
 ```ts
-// apps/web/next.config.ts
+// apps/frontend/next.config.ts
 import type { NextConfig } from 'next';
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3001';
@@ -79,7 +79,7 @@ Login is rate limited (20 attempts / 15 min per IP; 5 consecutive failures block
 ### Fetch wrapper with single-flight refresh
 
 ```ts
-// apps/web/lib/api.ts
+// apps/frontend/lib/api.ts
 type ApiError = { code: string; message: string; details?: unknown; request_id: string };
 export class ApiRequestError extends Error {
   constructor(
@@ -188,7 +188,7 @@ Tickets are single-use, so the browser's automatic reconnect cannot work. On `er
 and reconnect with backoff (1 s → 30 s). Limits: 5 streams per user (429 beyond that).
 
 ```tsx
-// apps/web/hooks/use-alert-stream.ts
+// apps/frontend/hooks/use-alert-stream.ts
 'use client';
 import { useEffect } from 'react';
 import { api } from '@/lib/api';
@@ -277,10 +277,10 @@ Permission needed per action (use `permissions` from `/auth/me` to show/hide con
 Generate TypeScript types from the contract:
 
 ```bash
-npx openapi-typescript http://localhost:3001/docs/openapi.json -o apps/web/lib/api-types.ts
+npx openapi-typescript http://localhost:3001/docs/openapi.json -o apps/frontend/lib/api-types.ts
 ```
 
-Once the app lives in this monorepo as `apps/web`, it can also import `@apimon/shared` (anomaly codes, labels and
+Once the app lives in this monorepo as `apps/frontend`, it can also import `@apimon/shared` (anomaly codes, labels and
 descriptions, permissions, realtime event names and payload types). Remember to add its `package.json` to the
 `manifests` stage of the Dockerfiles.
 
@@ -292,9 +292,9 @@ descriptions, permissions, realtime event names and payload types). Remember to 
 - Send an `Idempotency-Key` (UUID) with user-initiated ingestion so a double-click or retry cannot double-count.
 - Show `error.request_id` in error toasts: it matches the `request_id` in the API logs.
 
-## 7. Note on the existing `web-frontend/` folder
+## 7. Where the frontend lives
 
-The repository contains a separate `web-frontend/` project (its own git repository, untouched by this build). It was
-written against the previous Better Auth API: it logs in with a **username**, stores the token in **`localStorage`**, and
-calls session-management endpoints that no longer exist. When it is brought in as `apps/web`, move it to the flow above:
-email login, in-memory access token, cookie refresh with `credentials: 'include'`, permission-based UI.
+The dashboard is `apps/frontend` (npm workspace `@apimon/frontend`, Next.js). It proxies `/api/v1/*` and `/health*` to
+the backend through Next.js rewrites, so the browser stays same-origin and the refresh cookie works; only the SSE stream
+connects to `NEXT_PUBLIC_API_URL` directly. Run it with `npm run dev:frontend` (or `npm run dev` for everything) and in
+Docker as the `frontend` service.

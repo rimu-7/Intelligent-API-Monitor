@@ -28,6 +28,8 @@ Typed schema, plain SQL migrations reviewed in git, and the `sql` template for t
 
 ## ADR-007 Backend-only scope
 
+_Superseded by ADR-022: the frontend now lives in this repository as `apps/frontend`._
+
 The UI is a separate Next.js app built later. This build delivers its contract (OpenAPI, CORS, cookie auth, SSE) and `docs/FRONTEND_INTEGRATION.md`. The existing `web-frontend/` directory is a separate repository and is **not touched**; it is ignored by this repository's `.gitignore`.
 
 ## ADR-008 Role mapping and reserved manager role
@@ -162,3 +164,28 @@ Setting a positive value restores the old behaviour for teams that want it.
 
 **Consequences.** Active incidents accumulate until someone resolves them; a repeat of a resolved incident still opens
 a new one (partial unique index on ACTIVE). Alerts already auto-resolved stay resolved.
+
+## ADR-022 One workspace: `apps/backend`, `apps/frontend`, `apps/simulator`
+
+**Context.** The Next.js dashboard was added as `web-frontend/` at the repository root with its own package manager
+(pnpm) and lockfile, while the backend and simulator lived under `apps/` as npm workspaces with longer names
+(`monitor-api`, `telemetry-simulator`). Two package managers meant two installs, two lockfiles and a frontend that
+`lint`, `typecheck` and `build` at the root never checked.
+
+**Decision.** Every deployable lives under `apps/` with a short role name, and all of them are npm workspaces sharing
+one `package-lock.json`:
+
+| Folder            | Package             | Compose service(s)             |
+| ----------------- | ------------------- | ------------------------------ |
+| `apps/backend`    | `@apimon/backend`   | `backend`, `worker`, `migrate` |
+| `apps/frontend`   | `@apimon/frontend`  | `frontend`                     |
+| `apps/simulator`  | `@apimon/simulator` | `simulator`                    |
+| `packages/shared` | `@apimon/shared`    | –                              |
+
+All Dockerfiles build from the repository root. Next.js traces from the workspace root (`outputFileTracingRoot`), so
+the standalone server runs as `node apps/frontend/server.js`. Root `lint`, `typecheck` and `build` now cover the
+frontend. Install scripts allowed for dependencies are listed in the root `allowScripts` (npm 11 blocks them by default).
+Runtime log names (`service: monitor-api`, …) and stored data (`source_detail = telemetry-simulator`) are unchanged.
+
+**Consequences.** One `npm install` sets up everything. Running containers from the old layout must be replaced once
+with `docker compose down --remove-orphans && docker compose up --build -d` (volumes are kept).

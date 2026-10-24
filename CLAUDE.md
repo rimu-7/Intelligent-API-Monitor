@@ -6,18 +6,18 @@
 
 A Node.js/Express 5 + TypeScript monorepo that ingests API response telemetry (`POST /monitor`), detects anomalies with a pure deterministic engine, enriches alerts with an LLM (provider failover + deterministic template fallback), stores everything in PostgreSQL, serves active alerts at `GET /alerts`, streams updates over SSE and emails critical incidents. Runs with one command: `docker compose up --build`.
 
-**Scope: backend only.** The UI will be a separate Next.js app built later; this build delivers its API contract (spec §15). Do not create `apps/web`, React code or nginx config.
+**Layout:** `apps/backend` (API :3001 + worker), `apps/frontend` (Next.js :3000), `apps/simulator` (:4400), `packages/shared` (`@apimon/shared`). All are npm workspaces with one lockfile; never add another package manager. The frontend follows its own `apps/frontend/AGENTS.md` and ESLint config. See `docs/DECISIONS.md` ADR-022.
 
 **Auth: reuse the owner's existing Express role-based auth module** (spec §12.1) — audit it, harden it, port it into `modules/auth` + `modules/users`. Only `ADMIN` has permissions in this build; `MANAGER` exists but is denied everything except `/auth/me`.
 
-Apps: `apps/monitor-api` (API :3001 + worker), `apps/telemetry-simulator` (:4400). Shared types: `packages/shared` (`@apimon/shared`). API docs: `http://localhost:3001/docs`.
+API docs: `http://localhost:3001/docs`.
 
 ## Commands
 
 ```bash
 npm install
 npm run dev:infra          # postgres, redis in Docker
-npm run dev                # api + worker + simulator on the host (watch mode)
+npm run dev                # backend + worker + simulator + frontend on the host (watch mode)
 npm run lint
 npm run typecheck
 npm run test:unit          # no infrastructure needed

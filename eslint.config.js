@@ -8,8 +8,8 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/dist/**',
       '**/coverage/**',
-      'web-frontend/**',
-      'apps/monitor-api/drizzle/**',
+      'apps/frontend/**',
+      'apps/backend/drizzle/**',
     ],
   },
   js.configs.recommended,
@@ -49,10 +49,10 @@ export default tseslint.config(
   },
   {
     files: [
-      'apps/monitor-api/src/config/env.ts',
+      'apps/backend/src/config/env.ts',
       '**/test/**',
       '**/*.config.ts',
-      'apps/telemetry-simulator/src/config/env.ts',
+      'apps/simulator/src/config/env.ts',
     ],
     rules: { 'no-restricted-properties': 'off' },
   },

@@ -2,7 +2,7 @@
   "name": "@apimon/shared",
   "version": "1.0.0",
   "private": true,
-  "description": "Types and constants shared by the API, worker, simulator and the future Next.js client.",
+  "description": "Types and constants shared by the backend, simulator and frontend.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

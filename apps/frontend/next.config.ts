@@ -1,4 +1,8 @@
+import path from "node:path"
 import type { NextConfig } from "next"
+
+// npm workspaces root: dependencies are hoisted there, so tracing and Turbopack start from it.
+const monorepoRoot = path.join(import.meta.dirname, "../..")
 
 // Where the Next.js server proxies /api/v1/* (same-origin for the browser, so the refresh cookie works).
 // Read at build time and baked into the standalone server: pass it as a build arg in Docker.
@@ -14,6 +18,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Minimal self-contained server (node server.js) for the production image.
   output: "standalone",
+  outputFileTracingRoot: monorepoRoot,
+  turbopack: { root: monorepoRoot },
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }]

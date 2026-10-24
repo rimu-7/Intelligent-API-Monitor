@@ -184,7 +184,7 @@ docs/video/
 | Gemini → OpenAI → Mistral → template | `ai/alert-enrichment.service.ts`, `AI_PROVIDER_ORDER` |
 | AI only for emailed incidents, others on click | `AI_AUTO_ENRICH=email`, ADR-020 |
 | Live updates over SSE | `hooks/use-alert-stream.ts`, `/api/v1/alerts/stream` |
-| 12 simulator scenarios | `apps/telemetry-simulator/src/scenarios/scenarios.ts` |
+| 12 simulator scenarios | `apps/simulator/src/scenarios/scenarios.ts` |
 | Any SMTP provider, test email | `settings.service.ts`, Settings page |
 | Argon2, rotating refresh tokens, audit log | `modules/auth`, `modules/audit` |
 | 300+ automated tests | 197 unit · 100 integration · 14 contract |

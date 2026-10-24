@@ -1,5 +1,5 @@
 {
-  "name": "@apimon/monitor-api",
+  "name": "@apimon/backend",
   "version": "1.0.0",
   "private": true,
   "description": "Monitor API (HTTP + SSE) and background worker.",

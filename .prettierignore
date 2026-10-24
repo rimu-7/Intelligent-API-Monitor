@@ -1,7 +1,8 @@
 node_modules
 dist
 coverage
-web-frontend
+.next
+apps/frontend
 package-lock.json
-apps/monitor-api/drizzle
+apps/backend/drizzle
 docs/PROJECT_SPEC.md

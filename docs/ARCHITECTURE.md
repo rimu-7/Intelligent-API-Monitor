@@ -2,14 +2,14 @@
 
 ## Components
 
-| Service                       | Responsibility                                                                | State                           | Scales                                      |
-| ----------------------------- | ----------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------- |
-| `monitor-api` (:3001)         | HTTP API, ingestion pipeline, auth, SSE hub, Swagger UI                       | none (stateless)                | horizontally; SSE fan-out via Redis pub/sub |
-| `monitor-worker`              | AI enrichment, email, reconcile / auto-resolve / retention schedulers         | in-memory circuit breakers only | horizontally (BullMQ distributes jobs)      |
-| `telemetry-simulator` (:4400) | synthetic healthcare telemetry, scenarios, stream                             | stream timer                    | dev tool                                    |
-| PostgreSQL 17                 | source of truth                                                               | all durable data                | vertical / read replicas                    |
-| Redis 7                       | BullMQ queues, caches, rate limits, idempotency markers, pub/sub, SSE tickets | rebuildable / disposable        | —                                           |
-| `migrate`                     | one-shot migrations + idempotent admin seed under an advisory lock            | —                               | —                                           |
+| Service             | Responsibility                                                                | State                           | Scales                                      |
+| ------------------- | ----------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------- |
+| `backend` (:3001)   | HTTP API, ingestion pipeline, auth, SSE hub, Swagger UI                       | none (stateless)                | horizontally; SSE fan-out via Redis pub/sub |
+| `worker`            | AI enrichment, email, reconcile / auto-resolve / retention schedulers         | in-memory circuit breakers only | horizontally (BullMQ distributes jobs)      |
+| `simulator` (:4400) | synthetic healthcare telemetry, scenarios, stream                             | stream timer                    | dev tool                                    |
+| PostgreSQL 17       | source of truth                                                               | all durable data                | vertical / read replicas                    |
+| Redis 7             | BullMQ queues, caches, rate limits, idempotency markers, pub/sub, SSE tickets | rebuildable / disposable        | —                                           |
+| `migrate`           | one-shot migrations + idempotent admin seed under an advisory lock            | —                               | —                                           |
 
 The API and worker are the same image with different entrypoints (`dist/server.js`, `dist/worker.js`).
 Inside the API: `routes → controller → service → repository`. `createApp(container)` never listens; every dependency is
