@@ -34,8 +34,9 @@ export interface ApiAlert {
   last_records_returned?: number | null
   peak_response_time_ms?: number | null
   occurrence_count: number
-  ai_status: "PENDING" | "COMPLETED" | "FALLBACK"
-  ai_provider: string
+  /** SKIPPED: rule-based text only; AI runs on request (saves tokens). */
+  ai_status: "PENDING" | "COMPLETED" | "FALLBACK" | "SKIPPED"
+  ai_provider: string | null
   ai_model?: string | null
   ai_generated_at?: string | null
   first_seen_at: string

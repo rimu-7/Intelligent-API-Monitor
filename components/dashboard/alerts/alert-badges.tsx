@@ -61,7 +61,9 @@ export function AnomalyBadges({ types, max = 3 }: { types: string[]; max?: numbe
 
 export function providerLabel(alert: Pick<ApiAlert, "ai_provider" | "ai_model" | "ai_status">): string {
   if (alert.ai_status === "PENDING") return "AI analysis pending"
+  if (alert.ai_status === "SKIPPED") return "Rule-based · AI not requested"
   if (alert.ai_provider === "template") return "Rule-based summary"
+  if (!alert.ai_provider) return "Rule-based summary"
   const name = alert.ai_provider.charAt(0).toUpperCase() + alert.ai_provider.slice(1)
   return alert.ai_model ? `${name} · ${alert.ai_model}` : name
 }

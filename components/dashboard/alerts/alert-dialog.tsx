@@ -77,6 +77,7 @@ export function AlertDialog({ alert: initial, mode, onModeChange, onClose }: Pro
 
   const canResolve = alert.status === "ACTIVE" && can("alerts:resolve")
   const canRegenerate = can("alerts:regenerate")
+  const skipped = alert.ai_status === "SKIPPED"
 
   const resolve = async () => {
     setResolving(true)
@@ -149,6 +150,20 @@ export function AlertDialog({ alert: initial, mode, onModeChange, onClose }: Pro
               <p>{alert.alert_message}</p>
             </Block>
 
+            {skipped && !analyzing && (
+              <div className="flex flex-col gap-3 rounded-lg border border-dashed bg-muted/30 p-3 sm:flex-row sm:items-center">
+                <p className="flex-1 text-[11px] text-muted-foreground">
+                  To save AI usage, this incident got rule-based suggestions instead of AI analysis: it
+                  didn&apos;t trigger an email.
+                </p>
+                {canRegenerate && (
+                  <Button size="sm" onClick={regenerate} className="self-start sm:self-auto">
+                    <SparklesIcon /> Generate AI analysis
+                  </Button>
+                )}
+              </div>
+            )}
+
             <Block
               icon={LightbulbIcon}
               title="Probable cause"
@@ -196,7 +211,8 @@ export function AlertDialog({ alert: initial, mode, onModeChange, onClose }: Pro
             </>
           ) : (
             <>
-              {canRegenerate ? (
+              {/* Skipped incidents get their single, prominent button in the callout above. */}
+              {canRegenerate && (!skipped || analyzing) ? (
                 <Button variant="outline" onClick={regenerate} disabled={analyzing}>
                   {analyzing ? <Spinner /> : <SparklesIcon />}
                   {analyzing ? "Analyzing…" : "Re-analyze"}
